@@ -1,0 +1,4 @@
+[submodule "experiment_runner"]
+	path = experiment_runner
+	url = git@github.com:sbuschjaeger/experiment_runner.git
+	branch = master
