@@ -52,7 +52,7 @@ def get_complement(dts):
         complement_dts.append(new_dt)
     return complement_dts
 
-class SGDEnsemble(BaseEstimator, ClassifierMixin):
+class ProxEnsemble(BaseEstimator, ClassifierMixin):
     def __init__(self,  
                  forest_options,
                  optimizer,

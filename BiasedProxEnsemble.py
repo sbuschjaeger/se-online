@@ -2,6 +2,8 @@ import numpy as np
 import random
 from tqdm import tqdm
 
+from DecisionTree import generate_new_tree, tensor_predict_proba
+
 from joblib import Parallel, delayed
 
 from sklearn.ensemble import ExtraTreesClassifier
@@ -16,124 +18,45 @@ from sklearn.tree import _tree
 
 from plotille import histogram
 
-def get_rounded(dts):
-    # TODO THIS MAKES ONLY SENSE FOR BINARY CLASSIFICATION PROBLEMS!!!
-    def round_pred(tree, cur_node = 0):
-        if tree.children_left[cur_node] == _tree.TREE_LEAF and tree.children_right[cur_node] == _tree.TREE_LEAF:
-            #tree.value[cur_node][0] = [0, 0]
-            if tree.value[cur_node][0][0] > tree.value[cur_node][0][1]:
-                tree.value[cur_node][0] = [1, 0]
-            else:
-                tree.value[cur_node][0] = [0, 1]
-        else:
-            round_pred(tree, tree.children_left[cur_node])
-            round_pred(tree, tree.children_right[cur_node])
-
-    rounded_dts = []
-    for dt in dts:
-        new_dt = deepcopy(dt)
-        round_pred(new_dt.tree_)
-        rounded_dts.append(new_dt)
-    return rounded_dts
-
-def get_complement(dts):
-    # TODO THIS MAKES ONLY SENSE FOR BINARY CLASSIFICATION PROBLEMS!!!
-    def swap_pred(tree, cur_node = 0):
-        if tree.children_left[cur_node] == _tree.TREE_LEAF and tree.children_right[cur_node] == _tree.TREE_LEAF:
-            tree.value[cur_node][0] = [tree.value[cur_node][0][1],tree.value[cur_node][0][0]]
-        else:
-            swap_pred(tree, tree.children_left[cur_node])
-            swap_pred(tree, tree.children_right[cur_node])
-
-    complement_dts = []
-    for dt in dts:
-        new_dt = deepcopy(dt)
-        swap_pred(new_dt.tree_)
-        complement_dts.append(new_dt)
-    return complement_dts
-
-class BiasedSGDEnsemble(BaseEstimator, ClassifierMixin):
+class BiasedProxEnsemble:
     def __init__(self,  
-                 forest_options,
-                 optimizer,
-                 loss_function,
-                 loss_function_deriv,
-                 weights_per_class = False,
-                 # TODO: This is deprecated
-                 use_complement_classifier = False,
-                 # TODO: This is deprecated
-                 use_proba = False,
-                 n_jobs = 8,
-                 pipeline = None,
-                 seed = None,
-                 verbose = True, 
-                 out_path = None, 
-                 x_test = None, 
-                 y_test = None, 
-                 eval_test = 5,
-                 store_on_eval = False) :
-        super().__init__()
+                optimizer_cfg, 
+                max_depth = 5,
+                mode = "random",
+                weights_per_class = False,
+                seed = None,
+                verbose = True, 
+                out_path = None, 
+                x_test = None, 
+                y_test = None, 
+                eval_every = 5,
+                store_on_eval = False,
+                n_jobs = 8) :
         
-        self.forest_options = forest_options
-        self.optimizer = optimizer
-        self.loss_function = loss_function
-        self.loss_function_deriv = loss_function_deriv
+        self.optimizer_cfg = optimizer_cfg
         self.weights_per_class = weights_per_class
-        self.use_complement_classifier = use_complement_classifier
-        self.use_proba = use_proba
-
-        self.pipeline = pipeline
+        self.seed = seed
         self.verbose = verbose
         self.out_path = out_path
         self.x_test = x_test
         self.y_test = y_test
-        self.seed = seed
-        self.eval_test = eval_test
+        self.eval_every = eval_every
         self.store_on_eval = store_on_eval
+        self.max_depth = max_depth 
         self.n_jobs = n_jobs
+        self.mode = mode
 
-        if seed is not None:
+        if self.seed is not None:
             np.random.seed(seed)
             random.seed(seed)
-
-    def store(self, out_path, dim, name="model"):
-        raise NotImplementedError()
     
-    # Stolen directly from ForestClassifier -> predict in scikit-learn/sklearn/ensemble/forest.py (line 517-)
-    def proba_to_class(self, proba):
-         # self.n_classes_ was self.n_outputs
-        
-        if self.n_outputs_ == 1:
-            return self.classes_.take(np.argmax(proba, axis=1), axis=0)
-
-        else:
-            n_samples = proba[0].shape[0]
-            predictions = np.zeros((n_samples, self.n_outputs_))
-
-            for k in range(self.n_classes_):
-                predictions[:, k] = self.n_outputs_[k].take(np.argmax(proba[k],axis=1),axis=0)
-
-            return predictions
-    
-    def predict(self, X, eval_mode=True):
-        proba,_ = self.predict_proba(X)
-        return self.proba_to_class(proba)
-
-    # Stolen directly from ForestClassifier -> _validate_X_predict in scikit-learn/sklearn/ensemble/forest.py (line 350-)
-    def _validate_X_predict(self, X):
-        if self.estimators_ is None or len(self.estimators_) == 0:
-            raise NotFittedError("Estimator not fitted, "
-                                 "call `fit` before exploiting the model.")
-
-        return self.estimators_[0]._validate_X_predict(X, check_input=True)
-
     def predict_proba(self, X, eval_mode=True):
         # TODO
         # if self.pipeline:
         #     ret_val = apply_in_batches(self, self.pipeline.transform(X), batch_size=self.batch_size)
         # else:
         #     ret_val = apply_in_batches(self, X, batch_size=self.batch_size)
-        X = self._validate_X_predict(X)
+        #X = self._validate_X_predict(X)
 
         def single_predict_proba(h,w,X):
             #return w*h.predict_proba(X)
@@ -167,21 +90,12 @@ class BiasedSGDEnsemble(BaseEstimator, ClassifierMixin):
             yield inputs[excerpt], targets[excerpt]
 
     def fit(self, X, y, sample_weight = None):
-        # self.classes_ = unique_labels(y)
-        # self.n_classes_ = len(self.classes_)
-        if self.pipeline:
-            X = self.pipeline.fit_transform(X)
-
-        if y.ndim == 1:
-            self.n_outputs_ = 1
-        else:
-            self.n_outputs_ = y.shape[1]
-
         self.X_ = X
         self.y_ = y
         
         self.classes_ = unique_labels(y)
         self.n_classes_ = len(self.classes_)
+        self.n_outputs_ = self.n_classes_
 
         if self.out_path is not None:
             outfile = open(self.out_path + "/training.csv", "w", 1)
@@ -190,15 +104,17 @@ class BiasedSGDEnsemble(BaseEstimator, ClassifierMixin):
             else:
                 outfile.write("epoch,train-loss,train-accuracy,nonzero\n")
         
-        # TODO CHECK THIS
-        self.forest_options["n_estimators"] = 1
         self.estimator_weights_ = []
         self.estimators_ = []
 
-        epochs = self.optimizer.get("epochs",10)
-        batch_size = self.optimizer.get("batch_size", 32)
-        alpha = self.optimizer.get("alpha", 1e-3)
-        l_reg = self.optimizer.get("lambda",0)
+        epochs = self.optimizer_cfg.get("epochs",10)
+        batch_size = self.optimizer_cfg.get("batch_size", 32)
+        alpha = self.optimizer_cfg.get("alpha", 1e-3)
+        l_reg = self.optimizer_cfg.get("lambda",0)
+        loss_function = self.optimizer_cfg.get("loss_function", None)
+        loss_function_deriv = self.optimizer_cfg.get("loss_function_deriv", None)
+
+        assert loss_function is not None and loss_function_deriv is not None, "BiasedProxEnsemble: loss_function and loss_function_deriv must not be None!"
 
         for epoch in range(epochs):
             mini_batches = self.create_mini_batches(self.X_, self.y_, batch_size, True) 
@@ -211,25 +127,24 @@ class BiasedSGDEnsemble(BaseEstimator, ClassifierMixin):
                 for batch in mini_batches: 
                     data, target = batch 
 
-                    forest_classifier = self.forest_options.pop("model", ExtraTreesClassifier)
-                    forest = forest_classifier(**self.forest_options)
-                    forest.fit(data, target)
-
                     # TODO Test 1.0 initialization
                     if self.weights_per_class:
                         self.estimator_weights_.append([0.0 for i in range(self.n_outputs_)]) 
                     else:
                         self.estimator_weights_.append(0.0)
 
-                    self.estimators_.append(forest.estimators_[0])
+                    #self.estimators_.append(TensorTree(self.mode, data, target, self.max_depth, data.shape[1], self.n_classes_, None))
+                    self.estimators_.append(generate_new_tree(self.mode, data, target, self.max_depth, data.shape[1], self.n_classes_, None))
 
                     target_one_hot = np.array([ [1 if t == c else 0 for c in self.classes_] for t in target])
-                    output, all_proba = self.predict_proba(data)
-                    loss = self.loss_function(output, target_one_hot)
-                    loss_deriv = self.loss_function_deriv(output, target_one_hot)
+                    #output, all_proba = self.predict_proba(data)
+                    output, all_proba = tensor_predict_proba(data)
+                    
+                    loss = loss_function(output, target_one_hot)
+                    loss_deriv = loss_function_deriv(output, target_one_hot)
                     
                     epoch_loss += np.mean(loss)
-                    accuracy = accuracy_score(target, self.proba_to_class(output))*100.0
+                    accuracy = accuracy_score(target, output.argmax(axis=1))*100.0
                     avg_accuarcy += accuracy
                     batch_cnt += 1
                     
@@ -263,7 +178,7 @@ class BiasedSGDEnsemble(BaseEstimator, ClassifierMixin):
                     output,_ = self.predict_proba(self.x_test)
                     target_one_hot = np.array([ [1 if t == c else 0 for c in self.classes_] for t in self.y_test])
 
-                    test_loss = np.mean(self.loss_function(output, target_one_hot))
+                    test_loss = np.mean(loss_function(output, target_one_hot))
                     test_accuracy = accuracy_score(self.y_test, self.proba_to_class(output))*100.0
                     outfile.write("{},{},{},{},{},{}\n".format(epoch,epoch_loss/batch_cnt,avg_accuarcy/batch_cnt,np.count_nonzero(self.estimator_weights_),test_loss,test_accuracy))
 
