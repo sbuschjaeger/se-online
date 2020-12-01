@@ -6,6 +6,11 @@
 #include <random>
 #include <algorithm>
 
+#include "xtensor/xarray.hpp"
+#include "xtensor/xio.hpp"
+#include "xtensor/xview.hpp"
+#include "xtensor/xadapt.hpp"
+
 #include "Datatypes.h"
 #include "Tree.h"
 #include "Losses.h"
@@ -37,100 +42,119 @@ public:
     data_t next(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
         // Create new trees
         weights.push_back(init_weight);
+
+        // TODO Use std::vector here again? + Profile it
+        //xt::xarray<data_t> x_tensor = xt::xarray<data_t>::from_shape({X.size(), X[0].size()});
+        // xt::xarray<data_t> y_tensor = xt::xarray<data_t>::from_shape({Y.size()});
+        // for (unsigned int i = 0; i < X.size(); ++i) {
+        //     for (unsigned int j = 0; j < X[i].size(); ++j) {
+        //         x_tensor(i,j) = X[i][j];
+        //     }
+        //     y_tensor(i) = Y[i];
+        // }
+
+        //trees.push_back(Tree(max_depth, n_classes, seed++, x_tensor, y_tensor));
         trees.push_back(Tree(max_depth, n_classes, seed++, X, Y));
 
-        // Perform predictions of all trees on current batch
-        std::vector<std::vector<std::vector<data_t>>> all_proba(trees.size());
-
+        xt::xarray<data_t> all_proba = xt::xarray<data_t>::from_shape({trees.size(), X.size(), n_classes});
         for (unsigned int i = 0; i < trees.size(); ++i) {
-            all_proba[i] = trees[i].predict_proba(X);
+            trees[i].predict_proba(X, all_proba, i);
+            //trees[i].predict_proba(x_tensor, all_proba, i);
+
+            // for (unsigned int j = 0; j < X.size(); ++j) {
+            //     for (unsigned int k = 0; k < n_classes; ++k) {
+            //         all_proba(i,j,k) = proba(j,k);
+            //     }
+            // }
         }
 
+        auto w_tensor = xt::adapt(weights, {(int)weights.size()});
+        auto all_proba_weighted = all_proba * xt::reshape_view(w_tensor, { (int)weights.size(), 1, 1}); 
+        
         // Compute the ensemble prediction as weighted sum.  
-        std::vector<std::vector<data_t>> output(X.size());
-        for (unsigned int j = 0; j < trees.size(); ++j) {
-            for (unsigned int i = 0; i < X.size(); ++i) {
-                if (output[i].size() < n_classes) {
-                    output[i].resize(n_classes);
-                    std::fill(output[i].begin(), output[i].end(), 0);
-                }
-                for (unsigned int c = 0; c < n_classes; ++c) {
-                    output[i][c] += weights[j] * all_proba[j][i][c];
-                }
-            }
-        }
+        xt::xarray<data_t> output = xt::mean(all_proba_weighted, 0);
         
         // Compute the losses
-        std::vector<std::vector<data_t>> loss(X.size());
-        std::vector<std::vector<data_t>> loss_deriv(X.size());
-
-        for (unsigned int i = 0; i < X.size(); ++i) {
-            loss[i] = cross_entropy(output[i], Y[i]);
-            loss_deriv[i] = cross_entropy_deriv(output[i], Y[i]);
-        }
-
-        // Perform the prox-sgd step with biased gradient
-        std::vector<data_t> new_weights;
-        std::vector<Tree> new_trees;
-
-        for (unsigned int i = 0; i < trees.size(); ++i) {
-
-            // Compute the direction
-            data_t dir = 0;
-            for (unsigned int j = 0; j < X.size(); ++j) {
-                dir += std::inner_product(all_proba[i][j].begin(), all_proba[i][j].end(), loss_deriv[j].begin(), data_t(0));
-            }
-            dir = dir / (X.size() * n_classes);
-
-            // Perform the prox
-            auto tmp_w = weights[i] - alpha * dir;
-            auto sign = (data_t(0) < tmp_w) - (tmp_w < data_t(0));
-            tmp_w = std::abs(tmp_w) - lambda;
-            weights[i] = sign * std::max(tmp_w, 0.0);
-
-            // Only store this tree if it has a nonzero weight
-            if (weights[i] != 0) {
-                new_weights.push_back(weights[i]);
-                new_trees.push_back(trees[i]);
-            }
-        }
-
-        weights = new_weights;
-        trees = new_trees;
-
-        // Return the average loss over all classes / examples in the batch
-        data_t l = 0;
-        for (auto const & iloss: loss) {
-            l += std::accumulate(iloss.begin(), iloss.end(), data_t(0));
-        }
-        return l; // / (loss.size() * n_classes);
-    }
-
-    std::vector<std::vector<data_t>> predict_proba(std::vector<std::vector<data_t>> const &X) {
-        // Perform predictions of all trees on current batch
-        std::vector<std::vector<std::vector<data_t>>> all_proba;
-        all_proba.reserve(trees.size());
-
-        for (unsigned int i = 0; i < trees.size(); ++i) {
-            all_proba[i] = trees[i].predict_proba(X);
-        }
-
-        // Compute the ensemble prediction as weighted sum.  
-        std::vector<std::vector<data_t>> output;
-        output.reserve(X.size());
-        for (unsigned int i = 0; i < X.size(); ++i) {
-            output[i].reserve(n_classes);
-            std::fill(output[i].begin(), output[i].end(), 0);
-
-            for (unsigned int j = 0; j < trees.size(); ++j) {
-                for (unsigned int c = 0; c < n_classes; ++c) {
-                    output[i][c] += weights[j] * all_proba[i][j][c];
+        xt::xarray<data_t> target_one_hot = xt::xarray<data_t>::from_shape({X.size(), n_classes});
+        for (unsigned int i = 0; i < Y.size(); ++i) {
+            for (unsigned int j = 0; j < n_classes; ++j) {
+                if (Y[i] == j) {
+                    target_one_hot(i,j) = 1;
+                } else {
+                    target_one_hot(i,j) = 0;
                 }
             }
         }
 
-        return output;
+        // xt::xarray<data_t> loss = cross_entropy(output, target_one_hot);
+        // xt::xarray<data_t> loss_deriv = cross_entropy_deriv(output, target_one_hot);
+
+        xt::xarray<data_t> loss = mse(output, target_one_hot);
+        xt::xarray<data_t> loss_deriv = mse_deriv(output, target_one_hot);
+
+        xt::xarray<data_t> directions = xt::mean(all_proba * loss_deriv, {1,2});
+        w_tensor = w_tensor - alpha * directions;
+
+        xt::xarray<data_t> sign = xt::sign(w_tensor);
+        w_tensor = xt::abs(w_tensor) - lambda;
+        w_tensor = sign*xt::maximum(w_tensor,0);
+
+        auto wit = weights.begin();
+        auto tit = trees.begin();
+
+        while (wit != weights.end() && tit != trees.end()) {
+            if (*wit == 0) {
+                wit = weights.erase(wit);
+                tit = trees.erase(tit);
+            } else {
+                ++wit;
+                ++tit;
+            }
+        }
+
+        // // Perform the prox-sgd step with biased gradient
+        // std::vector<data_t> new_weights;
+        // std::vector<Tree> new_trees;
+
+        // for (unsigned int i = 0; i < weights.size(); ++i) {
+        //     if ( w_tensor(i) != 0) {
+        //         new_weights.push_back(w_tensor(i));
+        //         new_trees.push_back(trees[i]);
+        //     }
+        // }
+
+        // weights = new_weights;
+        // trees = new_trees;
+
+        // Return the sum of all loss in the batch
+        return xt::sum(loss)();
     }
+
+    // std::vector<std::vector<data_t>> predict_proba(std::vector<std::vector<data_t>> const &X) {
+    //     // Perform predictions of all trees on current batch
+    //     std::vector<std::vector<std::vector<data_t>>> all_proba;
+    //     all_proba.reserve(trees.size());
+
+    //     for (unsigned int i = 0; i < trees.size(); ++i) {
+    //         all_proba[i] = trees[i].predict_proba(X);
+    //     }
+
+    //     // Compute the ensemble prediction as weighted sum.  
+    //     std::vector<std::vector<data_t>> output;
+    //     output.reserve(X.size());
+    //     for (unsigned int i = 0; i < X.size(); ++i) {
+    //         output[i].reserve(n_classes);
+    //         std::fill(output[i].begin(), output[i].end(), 0);
+
+    //         for (unsigned int j = 0; j < trees.size(); ++j) {
+    //             for (unsigned int c = 0; c < n_classes; ++c) {
+    //                 output[i][c] += weights[j] * all_proba[i][j][c];
+    //             }
+    //         }
+    //     }
+
+    //     return output;
+    // }
 
     std::vector<data_t> predict_proba(std::vector<data_t> const &x) {
         return predict_proba({x});

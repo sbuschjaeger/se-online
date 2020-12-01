@@ -6,6 +6,8 @@
 #include <random>
 #include <algorithm>
 
+#include "xtensor/xarray.hpp"
+
 #include "Datatypes.h"
 
 class Node {
@@ -24,11 +26,14 @@ private:
     std::vector<Node> nodes;
     unsigned int start_leaf;
     unsigned int n_nodes;
+    unsigned int n_classes;
 
+    //inline unsigned int node_index(xt::xarray<data_t> const &x) const {
     inline unsigned int node_index(std::vector<data_t> const &x) const {
         unsigned int idx = 0;
 
-         while(idx < start_leaf) {
+        while(idx < start_leaf) {
+            //if (x(nodes[idx].feature) <= nodes[idx].threshold) {
             if (x[nodes[idx].feature] <= nodes[idx].threshold) {
                 idx = 2*idx + 1;
             } else {
@@ -41,32 +46,33 @@ private:
 
 public:
 
-    Tree(unsigned int max_depth, unsigned int n_classes, unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
+    //Tree(unsigned int max_depth, unsigned int n_classes, unsigned long seed, xt::xarray<data_t> const &X, xt::xarray<unsigned int> const &Y) 
+    Tree(unsigned int max_depth, unsigned int n_classes, unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) 
+        : n_classes(n_classes) {
+
         start_leaf = std::pow(2,max_depth - 1) - 1;
         n_nodes = std::pow(2,max_depth) - 1;
         nodes.resize(n_nodes);
 
         std::mt19937 gen(seed);
         std::uniform_real_distribution<> fdis(0, 1);
+        //std::uniform_int_distribution<> idis(0, X.shape()[1] - 1);
         std::uniform_int_distribution<> idis(0, X[0].size() - 1);
 
         for (unsigned int i = 0; i < n_nodes; ++i) {
             nodes[i].threshold = fdis(gen);
             nodes[i].feature = idis(gen);
             if (i >= start_leaf) {
-                // nodes[i].is_leaf = true;
                 nodes[i].preds.resize(n_classes);
                 std::fill(nodes[i].preds.begin(), nodes[i].preds.end(), 0);
             } 
-            // else {
-            //     nodes[i].is_leaf = false;
-            // }
         }
 
+        //for (unsigned int i = 0; i < X.shape()[0]; ++i) {
         for (unsigned int i = 0; i < X.size(); ++i) {
-            auto const & x = X[i];
-            auto const & y = Y[i];
-            nodes[node_index(x)].preds[y] = 1;
+            //auto x = xt::view(X, i, xt::all());
+            //nodes[node_index(x)].preds[Y[i]] = 1;
+            nodes[node_index(X[i])].preds[Y[i]] = 1;
         }
 
         for (unsigned int i = start_leaf; i < n_nodes; ++i) {
@@ -80,20 +86,38 @@ public:
         }
     }
 
-    std::vector<data_t> predict_proba(std::vector<data_t> const &x) {
-        return nodes[node_index(x)].preds;
+    void predict_proba(std::vector<std::vector<data_t>> const &X, xt::xarray<data_t> &place_to_put, int row) {
+        for (unsigned int i = 0; i < X.size(); ++i) {
+            //auto x = xt::view(X, i, xt::all());
+            std::vector<data_t> const & x = X[i];
+            std::vector<data_t> const & xpred = nodes[node_index(x)].preds;
+            for (unsigned int j = 0; j < xpred.size(); ++j) {
+                place_to_put(row, i, j) = xpred[j];
+            }
+        }
     }
 
-    std::vector<std::vector<data_t>> predict_proba(std::vector<std::vector<data_t>> const &X) {
-        std::vector<std::vector<data_t>> preds(X.size());
-        
-        // Apparently assignment is quicker than push_back
-        // https://www.acodersjourney.com/6-tips-supercharge-cpp-11-vector-performance/
-        for (unsigned int i = 0; i < X.size(); ++i) {
-            preds[i] = predict_proba(X[i]);
-        }
-        return preds;
-    }
+    // xt::xarray<data_t> predict_proba(xt::xarray<data_t> const &X) {
+    //     // TODO TEST THIS FUNCTION
+    //     xt::xarray<data_t> preds;
+    //     if (X.dimension() == 1) {
+    //         preds = xt::xarray<data_t>::from_shape({1, n_classes});
+    //     } else {
+    //         preds = xt::xarray<data_t>::from_shape({X.size(), n_classes});
+    //     }
+    //     predict_proba(X, preds, 0);
+    //     return preds;
+    // }
+
+    // void predict_proba(xt::xarray<data_t> const &X, xt::xarray<data_t> &place_to_put, int row) {
+    //     for (unsigned int i = 0; i < X.shape()[0]; ++i) {
+    //         auto x = xt::view(X, i, xt::all());
+    //         std::vector<data_t> const & xpred = nodes[node_index(x)].preds;
+    //         for (unsigned int j = 0; j < xpred.size(); ++j) {
+    //             place_to_put(row, i, j) = xpred[j];
+    //         }
+    //     }
+    // }
 
 };
 

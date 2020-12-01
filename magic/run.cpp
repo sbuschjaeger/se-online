@@ -2,6 +2,7 @@
 #include <fstream>
 #include <sstream>
 #include <iomanip>
+#include <chrono>
 
 #include "xtensor/xarray.hpp"
 #include "xtensor/xio.hpp"
@@ -91,7 +92,7 @@ std::string to_string(std::vector<std::vector<data_t>> const &data) {
     return s;
 }
 
-void print_progress(unsigned int cur_idx, unsigned int max_idx, std::string const & pre_str, unsigned int width = 100, unsigned int precision = 4) {
+void print_progress(unsigned int cur_idx, unsigned int max_idx, std::string const & pre_str, unsigned int width = 100, unsigned int precision = 8) {
     data_t progress = data_t(cur_idx) / data_t(max_idx);
 
     std::cout << "[" << cur_idx << "/" << max_idx << "] " << std::setprecision(precision) << pre_str <<  " " ;
@@ -106,14 +107,6 @@ void print_progress(unsigned int cur_idx, unsigned int max_idx, std::string cons
 }
 
 int main() {
-    xt::xarray<double> arr1{
-        {1.0, 2.0, 3.0},
-        {2.0, 5.0, 7.0},
-        {2.0, 5.0, 7.0}
-    };
-
-    std::cout << arr1 << std::endl;
-
     std::cout << "READING FILE " << std::endl;
     auto data = read_csv("../magic/magic04.data");
     auto const & X = data.first;
@@ -127,10 +120,12 @@ int main() {
     std::vector<unsigned int> batch_idx(data.first.size());
     std::iota (std::begin(batch_idx), std::end(batch_idx), 0); 
 
-    unsigned int epochs = 5;
+    unsigned int epochs = 25;
     unsigned int batch_size = 256;
 
-    BiasedProxEnsemble est(15, n_classes, 0, 0.001, 1e-5);
+    BiasedProxEnsemble est(15, n_classes, 0, 0.01, 1e-2);
+
+    auto start = std::chrono::steady_clock::now();
 
     for (unsigned int i = 0; i < epochs; ++i) {
         std::random_shuffle(batch_idx.begin(), batch_idx.end());
@@ -163,4 +158,8 @@ int main() {
         }
         std::cout << std::endl;
     }
+
+    auto end = std::chrono::steady_clock::now();   
+    std::chrono::duration<double> runtime_seconds = end-start;
+    std::cout << "Runtime was " << runtime_seconds.count() << " seconds" << std::endl;
 }
