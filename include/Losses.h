@@ -56,11 +56,37 @@ xt::xarray<data_t> cross_entropy_deriv(xt::xarray<data_t> const &pred, xt::xarra
 }
 
 xt::xarray<data_t> mse(xt::xarray<data_t> const &pred, xt::xarray<data_t> const &target){
-    return (pred-target)*(pred-target);
+    //TODO Assert shape
+    xt::xarray<data_t> target_one_hot = xt::xarray<data_t>::from_shape(pred.shape());
+
+    for (unsigned int i = 0; i < pred.shape()[0]; ++i) {
+        for (unsigned int j = 0; j < pred.shape()[1]; ++j) {
+            if (target(i) == j) {
+                target_one_hot(i,j) = 1;
+            } else {
+                target_one_hot(i,j) = 0;
+            }
+        }
+    }
+
+    return (pred-target_one_hot)*(pred-target_one_hot);
 }
 
 xt::xarray<data_t> mse_deriv(xt::xarray<data_t> const &pred, xt::xarray<data_t> const &target){
-    return 2 * (pred - target) ;
+    //TODO Assert shape
+    xt::xarray<data_t> target_one_hot = xt::xarray<data_t>::from_shape(pred.shape());
+
+    for (unsigned int i = 0; i < pred.shape()[0]; ++i) {
+        for (unsigned int j = 0; j < pred.shape()[1]; ++j) {
+            if (target(i) == j) {
+                target_one_hot(i,j) = 1;
+            } else {
+                target_one_hot(i,j) = 0;
+            }
+        }
+    }
+
+    return 2 * (pred - target_one_hot) ;
 }
 
 // auto cross_entropy(xt::xarray<data_t> const &pred, xt::xarray<data_t> const &targets) {

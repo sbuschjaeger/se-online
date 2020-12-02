@@ -7,6 +7,8 @@
 #include "xtensor/xarray.hpp"
 #include "xtensor/xio.hpp"
 #include "xtensor/xview.hpp"
+#include "xtensor/xsort.hpp"
+#include "xtensor/xindex_view.hpp"
 
 #include "BiasedProxEnsemble.h"
 
@@ -46,37 +48,16 @@ auto read_csv(std::string const& path) {
         file.close();
     }
 
-    return std::make_pair(X, Y);
-}
-
-std::vector<std::vector<data_t>> normalize(std::vector<std::vector<data_t>> const &data) {
-    std::vector<data_t> min;
-    std::vector<data_t> max;
-
-    std::vector<std::vector<data_t>> normalized_data(data);
-    for (auto const & d : data) {
-        for (unsigned int i = 0; i < d.size(); ++i) {
-            if (min.size() <= i) {
-                min.push_back(d[i]);
-            } else if (min[i] > d[i]) {
-                min[i] = d[i];
-            }
-
-            if (max.size() <= i) {
-                max.push_back(d[i]);
-            } else if (max[i] < d[i]) {
-                max[i] = d[i];
-            }
+    xt::xarray<data_t, xt::layout_type::row_major> x_tensor = xt::xarray<data_t>::from_shape({X.size(), X[0].size()});
+    xt::xarray<unsigned int> y_tensor = xt::xarray<unsigned int>::from_shape({X.size()});
+    for (unsigned int i = 0; i < X.size(); ++i) {
+        for (unsigned int j = 0; j < X[i].size(); ++j) {
+            x_tensor(i,j) = X[i][j];
         }
+        y_tensor(i) = Y[i];
     }
 
-    for (unsigned int i = 0; i < data.size(); ++i) {
-        for (unsigned int j = 0; j < data[i].size(); ++j) {
-            normalized_data[i][j] = (normalized_data[i][j] - min[j]) / (max[j] - min[j]);
-        }
-    }
-
-    return normalized_data;
+    return std::make_pair(x_tensor, y_tensor);
 }
 
 std::string to_string(std::vector<std::vector<data_t>> const &data) {
@@ -107,25 +88,56 @@ void print_progress(unsigned int cur_idx, unsigned int max_idx, std::string cons
 }
 
 int main() {
+    // xt::xarray<data_t, xt::layout_type::row_major> X = xt::xarray<data_t>::from_shape({1000, 10});
+    // for (unsigned int i = 0; i < 1000; ++i) {
+    //     for (unsigned int j = 0; j < 10; ++j) {
+    //         X(i,j) = 1.0;
+    //     }
+    // }
+
+    // std::cout << "X.shape() == " << xt::adapt(X.shape()) << std::endl;
+    // std::vector<unsigned int> indices = {2,1}; //1190, 3593,7550
+
+    // for (unsigned int i = 0; i < indices.size(); ++i) {
+    //     std::cout << "X at INDEX " << indices[i] << ":  " << xt::row(X, indices[i]) << std::endl;
+    // }
+    // auto x_view = xt::view(X, xt::keep(indices), xt::all());
+    // std::cout << "x_view.shape() == " << xt::adapt(x_view.shape()) << std::endl;
+    // std::cout << "x_view ==  " << x_view << std::endl;
+
+    // auto && eval_view = xt::eval(x_view);
+    // std::cout << eval_view << std::endl;
+
     std::cout << "READING FILE " << std::endl;
     auto data = read_csv("../magic/magic04.data");
-    auto const & X = data.first;
-    auto const & Y = data.second;
+    std::cout << "DONE " << std::endl;
 
-    auto X_normalized = normalize(X);
+    auto & X = data.first;
+    auto & Y = data.second;
     auto n_classes = 2;
-    // std::cout << to_string(X_normalized);
-    // return 1;
+    
+    auto start = std::chrono::steady_clock::now();
+    std::cout << "NORMALIZING DATA OF SHAPE " << xt::adapt(X.shape()) << std::endl;
+    // Not using auto here, which is kinda important
+    // std::cout << amin << std::endl;
+    // std::cout << amax << std::endl;
+    auto amin = xt::amin(X, 0)();
+    auto amax = xt::amax(X, 0)();
+    X  = (X - amin) / (amax - amin);
+    // around 12 seconds
+    //X  = (X - xt::amin(X, 0)) / (xt::amax(X, 0) - xt::amin(X, 0));
+    auto end = std::chrono::steady_clock::now();
+    std::chrono::duration<double> runtime_seconds = end-start;
+    std::cout << "DONE TIME WAS " <<  runtime_seconds.count() << " SECONDS" << std::endl;
 
-    std::vector<unsigned int> batch_idx(data.first.size());
-    std::iota (std::begin(batch_idx), std::end(batch_idx), 0); 
+    std::vector<unsigned int> batch_idx(X.shape()[0]);
+    std::iota(std::begin(batch_idx), std::end(batch_idx), 0); 
 
-    unsigned int epochs = 25;
+    unsigned int epochs = 5;
     unsigned int batch_size = 256;
 
-    BiasedProxEnsemble est(15, n_classes, 0, 0.01, 1e-2);
-
-    auto start = std::chrono::steady_clock::now();
+    BiasedProxEnsemble est(10, n_classes, 0, 0.01, 1e-3);
+    start = std::chrono::steady_clock::now();
 
     for (unsigned int i = 0; i < epochs; ++i) {
         std::random_shuffle(batch_idx.begin(), batch_idx.end());
@@ -135,17 +147,26 @@ int main() {
         data_t nonzero_epoch = 0;
         unsigned int batch_cnt = 0;
         while(cnt < batch_idx.size()) {
-            std::vector<std::vector<data_t>> data;
-            std::vector<unsigned int> target;
-
+            std::vector<unsigned int> indices;
             for (unsigned int j = 0; j < batch_size; ++j) {
                 if (cnt >= batch_idx.size()) {
                     break;
                 } else {
-                    data.push_back(X_normalized[batch_idx[cnt]]);
-                    target.push_back(Y[batch_idx[cnt]]);
-                    cnt += 1;
+                    indices.push_back(batch_idx[cnt]);
+                    ++cnt;
                 }
+            }
+
+            // auto data = xt::view(X, xt::keep(indices), xt::all());
+            // auto target = xt::view(Y, xt::keep(indices), xt::all());
+
+            xt::xarray<data_t> data = xt::xarray<data_t>::from_shape({indices.size(), (int)X.shape()[1]});
+            xt::xarray<unsigned int> target = xt::xarray<data_t>::from_shape({indices.size()});
+            for (unsigned int i = 0; i < indices.size(); ++i) {
+                for (unsigned int j = 0; j < X.shape()[1]; ++j) {
+                    data(i,j) = X(indices[i], j);
+                }
+                target(i) = Y(indices[i]);
             }
 
             auto loss = est.next(data, target);
@@ -159,7 +180,7 @@ int main() {
         std::cout << std::endl;
     }
 
-    auto end = std::chrono::steady_clock::now();   
-    std::chrono::duration<double> runtime_seconds = end-start;
-    std::cout << "Runtime was " << runtime_seconds.count() << " seconds" << std::endl;
+    end = std::chrono::steady_clock::now();   
+    runtime_seconds = end-start;
+    std::cout << "Runtime was " << runtime_seconds.count() << " seconds" << std::endl; 
 }
