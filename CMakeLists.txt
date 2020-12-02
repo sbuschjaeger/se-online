@@ -37,6 +37,9 @@ include_directories("./include")
 add_executable(run_magic ${SOURCES} magic/run.cpp)
 
 target_link_libraries(run_magic xtensor xtensor::optimize xtensor::use_xsimd)
+
+add_subdirectory(pybind11)
+pybind11_add_module(PyBPE include/Python.cpp)
 # add_executable(main tests/main.cpp)
 
 # add_subdirectory(pybind11)

@@ -130,35 +130,36 @@ public:
         return xt::sum(loss)();
     }
 
-    // std::vector<std::vector<data_t>> predict_proba(std::vector<std::vector<data_t>> const &X) {
-    //     // Perform predictions of all trees on current batch
-    //     std::vector<std::vector<std::vector<data_t>>> all_proba;
-    //     all_proba.reserve(trees.size());
-
-    //     for (unsigned int i = 0; i < trees.size(); ++i) {
-    //         all_proba[i] = trees[i].predict_proba(X);
-    //     }
-
-    //     // Compute the ensemble prediction as weighted sum.  
-    //     std::vector<std::vector<data_t>> output;
-    //     output.reserve(X.size());
-    //     for (unsigned int i = 0; i < X.size(); ++i) {
-    //         output[i].reserve(n_classes);
-    //         std::fill(output[i].begin(), output[i].end(), 0);
-
-    //         for (unsigned int j = 0; j < trees.size(); ++j) {
-    //             for (unsigned int c = 0; c < n_classes; ++c) {
-    //                 output[i][c] += weights[j] * all_proba[i][j][c];
-    //             }
-    //         }
-    //     }
-
-    //     return output;
-    // }
-
-    std::vector<data_t> predict_proba(std::vector<data_t> const &x) {
-        return predict_proba({x});
+    std::vector<std::vector<data_t>> predict_proba(std::vector<std::vector<data_t>> const &X) {
+        xt::xarray<data_t> output;
+        if (trees.size() == 0) {
+            output = xt::xarray<data_t>::from_shape({1, X.size(), n_classes});
+            output.fill(1.0/n_classes);
+        } else {
+            xt::xarray<data_t> all_proba = xt::xarray<data_t>::from_shape({trees.size(), X.size(), n_classes});
+            for (unsigned int i = 0; i < trees.size(); ++i) {
+                trees[i].predict_proba(X, all_proba, i);
+            }
+            auto w_tensor = xt::adapt(weights, {(int)weights.size()});
+            auto all_proba_weighted = all_proba * xt::reshape_view(w_tensor, { (int)weights.size(), 1, 1}); 
+            
+            output = xt::mean(all_proba_weighted, 0);
+        }
+        
+        std::vector<std::vector<data_t>> pred(X.size());
+        for (unsigned int i = 0; i < X.size(); ++i) {
+            pred[i].resize(n_classes);
+            for (unsigned int j = 0; j < n_classes; ++j) {
+                pred[i][j] = output(i,j);
+            }
+        }
+        
+        return pred;
     }
+
+    // std::vector<data_t> predict_proba(std::vector<data_t> const &x) {
+    //     return predict_proba({x});
+    // }
 
     unsigned int num_trees() const {
         return trees.size();

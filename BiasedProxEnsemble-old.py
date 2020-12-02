@@ -16,7 +16,7 @@ from sklearn.ensemble import RandomForestClassifier
 from copy import deepcopy
 from sklearn.tree import _tree
 
-from plotille import histogram
+# from plotille import histogram
 
 class BiasedProxEnsemble:
     def __init__(self,  
