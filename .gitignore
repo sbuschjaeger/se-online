@@ -3,3 +3,5 @@ __pycache__
 .vscode
 *.data
 build/*
+*.so
+PyBPE.egg-info/*
