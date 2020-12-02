@@ -29,12 +29,10 @@ private:
     unsigned int n_classes;
 
     inline unsigned int node_index(xt::xarray<data_t> const &X, unsigned int const row) const {
-    //inline unsigned int node_index(std::vector<data_t> const &x) const {
         unsigned int idx = 0;
 
         while(idx < start_leaf) {
             auto const col = nodes[idx].feature;
-            //if (x(nodes[idx].feature) <= nodes[idx].threshold) {
             if (X(row, col) <= nodes[idx].threshold) {
                 idx = 2*idx + 1;
             } else {
@@ -48,7 +46,6 @@ private:
 public:
 
     Tree(unsigned int max_depth, unsigned int n_classes, unsigned long seed, xt::xarray<data_t> const &X, xt::xarray<unsigned int> const &Y) 
-    //Tree(unsigned int max_depth, unsigned int n_classes, unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) 
         : n_classes(n_classes) {
 
         start_leaf = std::pow(2,max_depth - 1) - 1;
@@ -56,13 +53,17 @@ public:
         nodes.resize(n_nodes);
 
         std::mt19937 gen(seed);
-        std::uniform_real_distribution<> fdis(0, 1);
         std::uniform_int_distribution<> idis(0, X.shape()[1] - 1);
-        //std::uniform_int_distribution<> idis(0, X[0].size() - 1);
+        std::uniform_real_distribution<> fdis(0,1);
+        //xt::xarray<data_t> amin = xt::amin(X, 0);
+        //xt::xarray<data_t> amax = xt::amax(X, 0);
 
         for (unsigned int i = 0; i < n_nodes; ++i) {
+            auto feature =  idis(gen);
+            //std::uniform_real_distribution<> fdis(amin(feature), amax(feature));
+            nodes[i].feature = feature;
             nodes[i].threshold = fdis(gen);
-            nodes[i].feature = idis(gen);
+
             if (i >= start_leaf) {
                 nodes[i].preds.resize(n_classes);
                 std::fill(nodes[i].preds.begin(), nodes[i].preds.end(), 0);
@@ -70,10 +71,7 @@ public:
         }
 
         for (unsigned int i = 0; i < X.shape()[0]; ++i) {
-        //for (unsigned int i = 0; i < X.size(); ++i) {
-            //auto && x = xt::row(X, i);
-            nodes[node_index(X, i)].preds[Y[i]] = 1;
-            //nodes[node_index(X[i])].preds[Y[i]] = 1;
+            nodes[node_index(X, i)].preds[Y(i)] = 1;
         }
 
         for (unsigned int i = start_leaf; i < n_nodes; ++i) {
@@ -87,13 +85,8 @@ public:
         }
     }
 
-    //void predict_proba(std::vector<std::vector<data_t>> const &X, xt::xarray<data_t> &place_to_put, int row) {
     void predict_proba(xt::xarray<data_t> const &X, xt::xarray<data_t> &place_to_put, int row) {
-        //for (unsigned int i = 0; i < X.size(); ++i) {
         for (unsigned int i = 0; i < X.shape()[0]; ++i) {
-            //auto && x = xt::row(X, i);
-            //auto x = xt::view(X, i, xt::all());
-            //std::vector<data_t> const & x = X[i];
             std::vector<data_t> const & xpred = nodes[node_index(X, i)].preds;
             for (unsigned int j = 0; j < xpred.size(); ++j) {
                 place_to_put(row, i, j) = xpred[j];
@@ -102,7 +95,6 @@ public:
     }
 
     xt::xarray<data_t> predict_proba(xt::xarray<data_t> const &X) {
-        // TODO TEST THIS FUNCTION
         xt::xarray<data_t> preds;
         if (X.dimension() == 1) {
             preds = xt::xarray<data_t>::from_shape({1, n_classes});
@@ -112,17 +104,6 @@ public:
         predict_proba(X, preds, 0);
         return preds;
     }
-
-    // void predict_proba(xt::xarray<data_t> const &X, xt::xarray<data_t> &place_to_put, int row) {
-    //     for (unsigned int i = 0; i < X.shape()[0]; ++i) {
-    //         auto x = xt::view(X, i, xt::all());
-    //         std::vector<data_t> const & xpred = nodes[node_index(x)].preds;
-    //         for (unsigned int j = 0; j < xpred.size(); ++j) {
-    //             place_to_put(row, i, j) = xpred[j];
-    //         }
-    //     }
-    // }
-
 };
 
 #endif

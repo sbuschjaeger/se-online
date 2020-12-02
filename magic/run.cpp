@@ -10,6 +10,7 @@
 #include "xtensor/xsort.hpp"
 #include "xtensor/xindex_view.hpp"
 
+#include "Losses.h"
 #include "BiasedProxEnsemble.h"
 
 auto read_csv(std::string const& path) {
@@ -121,8 +122,8 @@ int main() {
     // Not using auto here, which is kinda important
     // std::cout << amin << std::endl;
     // std::cout << amax << std::endl;
-    auto amin = xt::amin(X, 0)();
-    auto amax = xt::amax(X, 0)();
+    xt::xarray<data_t> amin = xt::amin(X, 0);
+    xt::xarray<data_t> amax = xt::amax(X, 0);
     X  = (X - amin) / (amax - amin);
     // around 12 seconds
     //X  = (X - xt::amin(X, 0)) / (xt::amax(X, 0) - xt::amin(X, 0));
@@ -133,10 +134,10 @@ int main() {
     std::vector<unsigned int> batch_idx(X.shape()[0]);
     std::iota(std::begin(batch_idx), std::end(batch_idx), 0); 
 
-    unsigned int epochs = 5;
+    unsigned int epochs = 10000;
     unsigned int batch_size = 256;
 
-    BiasedProxEnsemble est(10, n_classes, 0, 0.01, 1e-3);
+    BiasedProxEnsemble est(10, n_classes, 0, 0.01, 5e-4, cross_entropy, cross_entropy_deriv);
     start = std::chrono::steady_clock::now();
 
     for (unsigned int i = 0; i < epochs; ++i) {
@@ -157,6 +158,7 @@ int main() {
                 }
             }
 
+            // Usually I would use a view here, but there seems to be a bug. See https://github.com/xtensor-stack/xtensor/issues/2240
             // auto data = xt::view(X, xt::keep(indices), xt::all());
             // auto target = xt::view(Y, xt::keep(indices), xt::all());
 

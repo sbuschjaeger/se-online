@@ -26,12 +26,11 @@ private:
     unsigned long seed;
     data_t alpha;
     data_t lambda;
+    data_t const init_weight;
 
     std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > loss;
     std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > loss_deriv;
 
-    // maybe expose that to somewhere
-    data_t const init_weight = 0.0;
 public:
 
     BiasedProxEnsemble(
@@ -39,8 +38,9 @@ public:
         unsigned int n_classes, 
         unsigned long seed, 
         data_t alpha,
-        data_t lambda
-    ) : max_depth(max_depth), n_classes(n_classes), seed(seed), alpha(alpha), lambda(lambda), loss(mse), loss_deriv(mse_deriv) {}
+        data_t lambda,
+        data_t init_weight = 0.0
+    ) : max_depth(max_depth), n_classes(n_classes), seed(seed), alpha(alpha), lambda(lambda), init_weight(init_weight), loss(mse), loss_deriv(mse_deriv) {}
 
     BiasedProxEnsemble(
         unsigned int max_depth,
@@ -49,10 +49,10 @@ public:
         data_t alpha,
         data_t lambda,
         std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > loss,
-        std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > loss_deriv
-    ) : max_depth(max_depth), n_classes(n_classes), seed(seed), alpha(alpha), lambda(lambda), loss(loss), loss_deriv(loss_deriv) {}
+        std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > loss_deriv,
+        data_t init_weight = 0.0
+    ) : max_depth(max_depth), n_classes(n_classes), seed(seed), alpha(alpha), lambda(lambda), init_weight(init_weight), loss(loss), loss_deriv(loss_deriv) {}
 
-    //data_t next(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
     data_t next(xt::xarray<data_t> const &X, xt::xarray<unsigned int> const &Y) {
         // Create new trees
         weights.push_back(init_weight);
@@ -74,10 +74,16 @@ public:
         // Compute the losses
         xt::xarray<data_t> losses = loss(output, Y);
         xt::xarray<data_t> losses_deriv = loss_deriv(output, Y);
+        // std::cout << losses << std::endl;
+        // std::cout << losses_deriv << std::endl;
 
+        //auto tmp = all_proba * losses_deriv;
         xt::xarray<data_t> directions = xt::mean(all_proba * losses_deriv, {1,2});
         w_tensor = w_tensor - alpha * directions;
-
+        // std::cout << "dir " << directions << std::endl;
+        // std::cout << "all_proba " << all_proba << std::endl;
+        // std::cout << "wtensor " << w_tensor << std::endl;
+        // std::cout << "tmp " << tmp << std::endl;
         xt::xarray<data_t> sign = xt::sign(w_tensor);
         w_tensor = xt::abs(w_tensor) - lambda;
         w_tensor = sign*xt::maximum(w_tensor,0);
@@ -115,44 +121,7 @@ public:
             output = xt::mean(all_proba_weighted, 0);
         }
         return output;
-
-        // std::vector<std::vector<data_t>> pred(X.size());
-        // for (unsigned int i = 0; i < X.size(); ++i) {
-        //     pred[i].resize(n_classes);
-        //     for (unsigned int j = 0; j < n_classes; ++j) {
-        //         pred[i][j] = output(i,j);
-        //     }
-        // }
-
-        // return pred;
     }
-
-    // std::vector<std::vector<data_t>> predict_proba(std::vector<std::vector<data_t>> const &X) {
-    //     xt::xarray<data_t> output;
-    //     if (trees.size() == 0) {
-    //         output = xt::xarray<data_t>::from_shape({1, X.size(), n_classes});
-    //         output.fill(1.0/n_classes);
-    //     } else {
-    //         xt::xarray<data_t> all_proba = xt::xarray<data_t>::from_shape({trees.size(), X.size(), n_classes});
-    //         for (unsigned int i = 0; i < trees.size(); ++i) {
-    //             trees[i].predict_proba(X, all_proba, i);
-    //         }
-    //         auto w_tensor = xt::adapt(weights, {(int)weights.size()});
-    //         auto all_proba_weighted = all_proba * xt::reshape_view(w_tensor, { (int)weights.size(), 1, 1}); 
-            
-    //         output = xt::mean(all_proba_weighted, 0);
-    //     }
-        
-    //     std::vector<std::vector<data_t>> pred(X.size());
-    //     for (unsigned int i = 0; i < X.size(); ++i) {
-    //         pred[i].resize(n_classes);
-    //         for (unsigned int j = 0; j < n_classes; ++j) {
-    //             pred[i][j] = output(i,j);
-    //         }
-    //     }
-
-    //     return pred;
-    // }
 
     unsigned int num_trees() const {
         return trees.size();
