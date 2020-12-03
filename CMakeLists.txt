@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
 project(PSGDEnsemble LANGUAGES CXX)
 
+set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
+
 # Include pybind11
 # add_subdirectory(lib/pybind11)
 
@@ -28,7 +30,17 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -ffast-math -march=native -mtune=native")
 find_package(xtl REQUIRED)
 find_package(xtensor REQUIRED)
 
+find_package(xtensor-python REQUIRED)
+find_package(pybind11 REQUIRED)
+find_package(NumPy REQUIRED)
+
+message(STATUS "Found numpy: ${NUMPY_INCLUDE_DIRS}")
+
+# These are my includes
 include_directories("./include")
+
+# xtensor-python requires numpy includes
+include_directories(${NUMPY_INCLUDE_DIRS})
 
 # We assume that we run / install this via a conda environment
 #include_directories("${CONDA_PREFIX}/include/")
@@ -36,10 +48,9 @@ include_directories("./include")
 
 add_executable(run_magic ${SOURCES} magic/run.cpp)
 
-target_link_libraries(run_magic xtensor xtensor::optimize xtensor::use_xsimd)
-
-add_subdirectory(pybind11)
+target_link_libraries(run_magic xtensor xtensor::optimize xtensor::use_xsimd xtensor-python)
 pybind11_add_module(PyBPE include/Python.cpp)
+
 # add_executable(main tests/main.cpp)
 
 # add_subdirectory(pybind11)

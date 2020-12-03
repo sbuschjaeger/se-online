@@ -84,12 +84,12 @@ private:
 
         data_t p_left = 0;
         for (auto const l : left) {
-            p_left += l / sum_left * l / sum_left;
+            p_left += (l / sum_left) * (l / sum_left);
         }
-
+        
         data_t p_right = 0;
         for (auto const r : right) {
-            p_right += r / sum_right * r / sum_right;
+            p_right += (r / sum_right) * (r / sum_right);
         }
 
         return sum_left / static_cast<data_t>(sum_left + sum_right) * p_left + sum_right /  static_cast<data_t>(sum_left + sum_right) * p_right;
@@ -140,13 +140,13 @@ private:
                 right_cnts[f.second] -= 1;
                 data_t cur_gini = gini(left_cnts, right_cnts);
                 
-                if (cur_gini > best_gini) {
+                if (cur_gini < best_gini) {
                     best_gini = cur_gini;
                     best_sample = j;
                 }
             }
 
-            if (i == 0 || best_gini > overall_best_gini) {
+            if (i == 0 || best_gini < overall_best_gini) {
                 overall_best_gini = best_gini;
                 overall_best_feature = i;
                 overall_best_sample = best_sample;

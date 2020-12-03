@@ -135,9 +135,9 @@ int main() {
     std::iota(std::begin(batch_idx), std::end(batch_idx), 0); 
 
     unsigned int epochs = 5000;
-    unsigned int batch_size = 1024;
+    unsigned int batch_size = 128;
 
-    BiasedProxEnsemble<true> est(10, n_classes, 0, 0.01, 1e-3, cross_entropy, cross_entropy_deriv);
+    BiasedProxEnsemble<true> est(5, n_classes, 0, 0.01, 1e-4, cross_entropy, cross_entropy_deriv);
     start = std::chrono::steady_clock::now();
 
     for (unsigned int i = 0; i < epochs; ++i) {
