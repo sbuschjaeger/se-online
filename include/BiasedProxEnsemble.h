@@ -15,10 +15,11 @@
 #include "Tree.h"
 #include "Losses.h"
 
+template <bool RANDOM = true>
 class BiasedProxEnsemble {
 
 private:
-    std::vector<Tree> trees;
+    std::vector<Tree<RANDOM>> trees;
     std::vector<data_t> weights;
 
     unsigned int max_depth;
@@ -58,7 +59,7 @@ public:
         weights.push_back(init_weight);
 
         //trees.push_back(Tree(max_depth, n_classes, seed++, x_tensor, y_tensor));
-        trees.push_back(Tree(max_depth, n_classes, seed++, X, Y));
+        trees.push_back(Tree<RANDOM>(max_depth, n_classes, seed++, X, Y));
 
         xt::xarray<data_t> all_proba = xt::xarray<data_t>::from_shape({trees.size(), X.shape()[0], n_classes});
         for (unsigned int i = 0; i < trees.size(); ++i) {
