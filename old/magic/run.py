@@ -3,10 +3,17 @@
 import sys
 import numpy as np
 import pandas as pd
+from scipy.special import softmax
 from datetime import datetime
+from functools import partial
 from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
 from sklearn.model_selection import KFold
 import argparse
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import ExtraTreesClassifier
+from sklearn.ensemble import AdaBoostClassifier
 
 # from sklearn.metrics import make_scorer, accuracy_score
 from sklearn.preprocessing import MinMaxScaler
@@ -16,19 +23,19 @@ from experiment_runner.experiment_runner_v2 import run_experiments, get_ctor_arg
 sys.path.append("../")
 from BiasedProxEnsemble import BiasedProxEnsemble
 
-# def cross_entropy(pred, target, epsilon=1e-12):
-#     #pred = np.clip(pred, epsilon, 1.0 - epsilon)
-#     p = softmax(pred, axis=1)
-#     log_likelihood = -target*np.log(p)
+def cross_entropy(pred, target, epsilon=1e-12):
+    #pred = np.clip(pred, epsilon, 1.0 - epsilon)
+    p = softmax(pred, axis=1)
+    log_likelihood = -target*np.log(p)
 
-#     return log_likelihood
+    return log_likelihood
 
-# def cross_entropy_deriv(pred, target):
-#     m = target.shape[0]
-#     grad = softmax(pred, axis=1)
-#     grad[range(m),target.argmax(axis=1)] -= 1
-#     #grad = grad/m
-#     return grad
+def cross_entropy_deriv(pred, target):
+    m = target.shape[0]
+    grad = softmax(pred, axis=1)
+    grad[range(m),target.argmax(axis=1)] -= 1
+    #grad = grad/m
+    return grad
 
 def pre(cfg):
     model_ctor = cfg.pop("model")
@@ -157,20 +164,25 @@ models = []
 #     )
 
 for l in [ 1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3]:
+    optimizer_cfg = {
+        "loss_function":cross_entropy,
+        "loss_function_deriv":cross_entropy_deriv,
+        "batch_size":256,
+        "alpha":1e-2,
+        "lambda":l, # This depends on the strength of the base learner as well as the step size alpha
+        "epochs":100
+    }
+
     models.append(
         {
             "model":BiasedProxEnsemble,
-            "max_depth":20,
-            "alpha":1e-2,
-            "l_reg":1e-4, 
-            "loss":"cross-entropy",
-            "mode":"random",
-            "epochs":100,
-            "batch_size":256,
-            "verbose":True,
+            "optimizer_cfg":optimizer_cfg,
+            "verbose":False,
             "X":X,
             "Y":Y,
             "idx":idx,
+            "max_depth":20,
+            "mode":"sklearn-random",
             "repetitions":n_splits
         }
     )

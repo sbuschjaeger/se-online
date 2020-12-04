@@ -29,12 +29,12 @@ private:
     unsigned int n_nodes;
     unsigned int n_classes;
 
-    inline unsigned int node_index(xt::xarray<data_t> const &X, unsigned int const row) const {
+    inline unsigned int node_index(std::vector<data_t> const &x) const {
         unsigned int idx = 0;
 
         while(idx < start_leaf) {
-            auto const col = nodes[idx].feature;
-            if (X(row, col) <= nodes[idx].threshold) {
+            auto const f = nodes[idx].feature;
+            if (x[f] <= nodes[idx].threshold) {
                 idx = 2*idx + 1;
             } else {
                 idx = 2*idx + 2;
@@ -43,9 +43,9 @@ private:
         return idx;
     }
 
-    void random_nodes(unsigned long seed, xt::xarray<data_t> const &X, xt::xarray<unsigned int> const &Y) {
+    void random_nodes(unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
         std::mt19937 gen(seed);
-        std::uniform_int_distribution<> idis(0, X.shape()[1] - 1);
+        std::uniform_int_distribution<> idis(0, X[0].size() - 1);
         std::uniform_real_distribution<> fdis(0,1);
         //xt::xarray<data_t> amin = xt::amin(X, 0);
         //xt::xarray<data_t> amax = xt::amax(X, 0);
@@ -63,8 +63,8 @@ private:
             } 
         }
 
-        for (unsigned int i = 0; i < X.shape()[0]; ++i) {
-            nodes[node_index(X, i)].preds[Y(i)] += 1;
+        for (unsigned int i = 0; i < X.size(); ++i) {
+            nodes[node_index(X[i])].preds[Y[i]] += 1;
         }
 
         for (unsigned int i = start_leaf; i < n_nodes; ++i) {
@@ -156,27 +156,27 @@ private:
         return std::make_pair(X[overall_best_sample][overall_best_feature], overall_best_feature);
     }
 
-    void trained_nodes(xt::xarray<data_t> const &X, xt::xarray<unsigned int> const &Y) {
+    void trained_nodes(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
         // Note: Yeah this is kinda stupid to do I know. We have xtensor and xtensor has nice views and slices 
         // and all that good stuff. However, xtensor is sometimes slow when it comes to views and we have to 
         // handle indices which can be buggy sometimes. Moreover, stacking is also a pain sometimes. 
         // Plus, this code is actually kinda efficient.
-        std::vector<std::vector<data_t>> XVec(X.shape()[0]);
-        std::vector<unsigned int> YVec(Y.shape()[0]);
+        // std::vector<std::vector<data_t>> XVec(X.shape()[0]);
+        // std::vector<unsigned int> YVec(Y.shape()[0]);
 
-        for (unsigned int i = 0; i < X.shape()[0]; ++i) {
-            XVec[i].resize(X.shape()[1]);
-            for (unsigned int j = 0; j < X.shape()[1]; ++j) {
-                XVec[i][j] = X(i,j);
-            }
-            YVec[i] = Y(i);
-        }
+        // for (unsigned int i = 0; i < X.shape()[0]; ++i) {
+        //     XVec[i].resize(X.shape()[1]);
+        //     for (unsigned int j = 0; j < X.shape()[1]; ++j) {
+        //         XVec[i][j] = X(i,j);
+        //     }
+        //     YVec[i] = Y(i);
+        // }
 
         // <std::pair<std::vector<std::vector<data_t>>, std::vector<unsigned int>>
         std::queue<
             std::pair<std::vector<std::vector<data_t>>, std::vector<unsigned int>>
         > to_expand; // = {std::make_pair(XVec,YVec)};
-        to_expand.push(std::make_pair(XVec, YVec));
+        to_expand.push(std::make_pair(X, Y));
 
         // auto split = best_split(n_classes, XVec, YVec);
         // nodes.push_back(Node(split.first, split.second));
@@ -234,7 +234,7 @@ private:
 
 public:
 
-    Tree(unsigned int max_depth, unsigned int n_classes, unsigned long seed, xt::xarray<data_t> const &X, xt::xarray<unsigned int> const &Y) 
+    Tree(unsigned int max_depth, unsigned int n_classes, unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) 
         : n_classes(n_classes) {
 
         start_leaf = std::pow(2,max_depth - 1) - 1;
@@ -247,23 +247,21 @@ public:
         }
     }
 
-    void predict_proba(xt::xarray<data_t> const &X, xt::xarray<data_t> &place_to_put, int row) {
-        for (unsigned int i = 0; i < X.shape()[0]; ++i) {
-            std::vector<data_t> const & xpred = nodes[node_index(X, i)].preds;
+    void predict_proba(std::vector<std::vector<data_t>> const &X, xt::xarray<data_t> &place_to_put, int row) {
+        for (unsigned int i = 0; i < X.size(); ++i) {
+            std::vector<data_t> const & xpred = nodes[node_index(X[i])].preds;
             for (unsigned int j = 0; j < xpred.size(); ++j) {
                 place_to_put(row, i, j) = xpred[j];
             }
         }
     }
 
-    xt::xarray<data_t> predict_proba(xt::xarray<data_t> const &X) {
-        xt::xarray<data_t> preds;
-        if (X.dimension() == 1) {
-            preds = xt::xarray<data_t>::from_shape({1, n_classes});
-        } else {
-            preds = xt::xarray<data_t>::from_shape({X.size(), n_classes});
+    std::vector<std::vector<data_t>>  predict_proba(std::vector<std::vector<data_t>> const &X) {
+        std::vector<std::vector<data_t>> preds(X.size());
+        for (unsigned int i = 0; i < X.size(); ++i) {
+            std::vector<data_t> const & xpred = nodes[node_index(X[i])].preds;
+            preds.push_back(xpred);
         }
-        predict_proba(X, preds, 0);
         return preds;
     }
 };
