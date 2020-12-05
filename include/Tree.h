@@ -21,7 +21,6 @@ public:
     Node() = default;
 };
 
-template <bool RANDOM = true>
 class Tree {
 private:
     std::vector<Node> nodes;
@@ -47,8 +46,6 @@ private:
         std::mt19937 gen(seed);
         std::uniform_int_distribution<> idis(0, X[0].size() - 1);
         std::uniform_real_distribution<> fdis(0,1);
-        //xt::xarray<data_t> amin = xt::amin(X, 0);
-        //xt::xarray<data_t> amax = xt::amax(X, 0);
 
         nodes.resize(n_nodes);
         for (unsigned int i = 0; i < n_nodes; ++i) {
@@ -82,33 +79,38 @@ private:
         unsigned int sum_left = std::accumulate(left.begin(), left.end(), data_t(0));
         unsigned int sum_right = std::accumulate(right.begin(), right.end(), data_t(0));
 
-        data_t p_left = 0;
+        data_t gleft = 0;
         for (auto const l : left) {
-            p_left += (l / sum_left) * (l / sum_left);
+            gleft += (static_cast<data_t>(l) / sum_left) * (static_cast<data_t>(l) / sum_left);
         }
-        
-        data_t p_right = 0;
-        for (auto const r : right) {
-            p_right += (r / sum_right) * (r / sum_right);
-        }
+        gleft = 1.0 - gleft;
 
-        return sum_left / static_cast<data_t>(sum_left + sum_right) * p_left + sum_right /  static_cast<data_t>(sum_left + sum_right) * p_right;
+        data_t gright = 0;
+        for (auto const r : right) {
+            gright += (static_cast<data_t>(r) / sum_right) * (static_cast<data_t>(r) / sum_right);
+        }
+        gright = 1.0 - gright;
+
+        return sum_left / static_cast<data_t>(sum_left + sum_right) * gleft + sum_right /  static_cast<data_t>(sum_left + sum_right) * gright;
     }
 
+    // TODO CHECK IF THIS REALLY BUILTS A "PERFECT" TREE
     static auto best_split(unsigned int n_classes, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
         if (X.size() <= 1) {
             return std::make_pair<data_t, unsigned int>(1.0, 0);
         }
+
+        // if (X.size() == 2) {
+        //     return std::make_pair<data_t, unsigned int>(static_cast<data_t>(X[0][0]), 0);
+        // }
 
         unsigned int n_data = X.size();
         unsigned int n_features = X[0].size();
 
         data_t overall_best_gini = 0;
         unsigned int overall_best_feature = 0;
-        unsigned int overall_best_sample = 0;
+        data_t overall_best_threshold = 0;
         for (unsigned int i = 0; i < n_features; ++i) {
-            // Usually we should use a view / column here to access columns but I have the feeling that this is slow?
-            // TODO Verfiy
             std::vector<std::pair<data_t, unsigned int>> f_values(n_data);
             for (unsigned int j = 0; j < n_data; ++j) {
                 f_values[j] = std::make_pair(X[j][i], Y[j]);
@@ -116,66 +118,58 @@ private:
             
             // By default sort sorts after the first feature
             std::sort(f_values.begin(), f_values.end());
+            data_t max_t = f_values[f_values.size() - 1].first;
 
             std::vector<unsigned int> left_cnts(n_classes);
             std::vector<unsigned int> right_cnts(n_classes);
             std::fill(left_cnts.begin(), left_cnts.end(), 0);
             std::fill(right_cnts.begin(), right_cnts.end(), 0);
             
-            for (unsigned int j = 0; j < f_values.size(); ++j) {
+            left_cnts[f_values[0].second] += 1;
+            for (unsigned int j = 1; j < f_values.size(); ++j) {
                 auto const & f = f_values[j];
-                if (j == 0) {
-                    left_cnts[f.second] += 1;
-                } else {
-                    right_cnts[f.second] += 1;
-                }
+                right_cnts[f.second] += 1;
             }
             
             data_t best_gini = gini(left_cnts, right_cnts);
-            unsigned int best_sample = 0;
+            data_t best_threshold = 0.5 * (f_values[0].first + f_values[1].first); 
+            // std::cout << "Checking feature " << 0 << " with threshold " << 0.5 * (f_values[0].first + f_values[1].first) << " and score " << best_gini << std::endl;
 
-            for (unsigned int j = 1; j < f_values.size() - 1; ++j) {
+            // for (unsigned int j = 1; j < f_values.size() - 1; ++j) {
+            unsigned int j = 1;
+            while (f_values[j].first < max_t) {
                 auto const & f = f_values[j];
                 left_cnts[f.second] += 1;
                 right_cnts[f.second] -= 1;
-                data_t cur_gini = gini(left_cnts, right_cnts);
-                
-                if (cur_gini < best_gini) {
-                    best_gini = cur_gini;
-                    best_sample = j;
+
+                if (f_values[j - 1].first != f_values[j].first) {
+                    data_t cur_gini = gini(left_cnts, right_cnts);
+                    // std::cout << "Checking feature " << i << " with threshold " << 0.5 * (f_values[j].first + f_values[j + 1].first) << " and score " << cur_gini << std::endl;
+                    if (cur_gini < best_gini) {
+                        best_gini = cur_gini;
+                        best_threshold = 0.5 * (f_values[j].first + f_values[j + 1].first);
+                    }
                 }
+                ++j;
             }
 
+            // TODO ADD RANDOM STUFF IN CASE OF A TIE
             if (i == 0 || best_gini < overall_best_gini) {
                 overall_best_gini = best_gini;
                 overall_best_feature = i;
-                overall_best_sample = best_sample;
+                overall_best_threshold = best_threshold;
             } 
         }
 
-        return std::make_pair(X[overall_best_sample][overall_best_feature], overall_best_feature);
+        // std::cout << "Best split is " << overall_best_feature << " with threshold " << overall_best_threshold <<  std::endl;
+        return std::make_pair(overall_best_threshold, overall_best_feature);
     }
 
     void trained_nodes(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
-        // Note: Yeah this is kinda stupid to do I know. We have xtensor and xtensor has nice views and slices 
-        // and all that good stuff. However, xtensor is sometimes slow when it comes to views and we have to 
-        // handle indices which can be buggy sometimes. Moreover, stacking is also a pain sometimes. 
-        // Plus, this code is actually kinda efficient.
-        // std::vector<std::vector<data_t>> XVec(X.shape()[0]);
-        // std::vector<unsigned int> YVec(Y.shape()[0]);
-
-        // for (unsigned int i = 0; i < X.shape()[0]; ++i) {
-        //     XVec[i].resize(X.shape()[1]);
-        //     for (unsigned int j = 0; j < X.shape()[1]; ++j) {
-        //         XVec[i][j] = X(i,j);
-        //     }
-        //     YVec[i] = Y(i);
-        // }
-
         // <std::pair<std::vector<std::vector<data_t>>, std::vector<unsigned int>>
         std::queue<
             std::pair<std::vector<std::vector<data_t>>, std::vector<unsigned int>>
-        > to_expand; // = {std::make_pair(XVec,YVec)};
+        > to_expand; 
         to_expand.push(std::make_pair(X, Y));
 
         // auto split = best_split(n_classes, XVec, YVec);
@@ -186,9 +180,9 @@ private:
             to_expand.pop();
 
             auto split = best_split(n_classes, data.first, data.second);
-            auto f = split.second;
             auto t = split.first;
-
+            auto f = split.second;
+            
             // We assume complete trees in this implementation which means that we always have 2 children 
             // and that each path in the tree has max_depth length. Now it might happen that XLeft / XRight is empty. 
             // In this best_split return t = 1, which means that _all_ data points are routed towards XLeft
@@ -206,6 +200,11 @@ private:
                     YRight.push_back(data.second[i]);
                 }
             }
+
+            // std::cout << nodes.size() << " : Choose feature " << f << " with threshold " << t << std::endl;
+            // std::cout << nodes.size() << " : Left has " << XLeft.size() << std::endl;
+            // std::cout << nodes.size() << " : Right has " << XRight.size() << std::endl;
+            // std::cout << std::endl;
 
             to_expand.push(std::make_pair(XLeft, YLeft));
             to_expand.push(std::make_pair(XRight, YRight));
@@ -234,13 +233,12 @@ private:
 
 public:
 
-    Tree(unsigned int max_depth, unsigned int n_classes, unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) 
-        : n_classes(n_classes) {
+    Tree(bool use_random, unsigned int max_depth, unsigned int n_classes, unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) : n_classes(n_classes) {
 
-        start_leaf = std::pow(2,max_depth - 1) - 1;
-        n_nodes = std::pow(2,max_depth) - 1;
+        start_leaf = std::pow(2,max_depth) - 1;
+        n_nodes = std::pow(2,max_depth + 1) - 1;
 
-        if constexpr(RANDOM) {
+        if (use_random) {
             random_nodes(seed, X, Y);
         } else {
             trained_nodes(X, Y);

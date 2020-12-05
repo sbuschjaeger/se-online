@@ -8,7 +8,8 @@ from sklearn.utils.multiclass import unique_labels
 from sklearn.metrics import accuracy_score
 
 # from plotille import histogram
-from PyBPE import RandomBiasedProxEnsemble, TrainedBiasedProxEnsemble
+#from PyBPE import BiasedProxEnsemble
+import PyBPE
 
 class BiasedProxEnsemble:
     def __init__(self,  
@@ -26,10 +27,9 @@ class BiasedProxEnsemble:
                 y_test = None, 
                 eval_every = 5):
                         
-        assert loss == "cross-entropy", "Currently only cross entropy loss is supported"
+        assert loss in ["mse","cross-entropy"], "Currently only {mse, cross entropy} loss is supported"
         assert mode in ["random", "trained"], "Currently only {random, trained} mode supported"
         assert max_depth >= 1, "max_depth should be at-least 1!"
-
 
         self.max_depth = max_depth
         self.alpha = alpha
@@ -81,7 +81,7 @@ class BiasedProxEnsemble:
         self.n_classes_ = len(self.classes_)
         self.n_outputs_ = self.n_classes_
 
-        self.model = RandomBiasedProxEnsemble(self.max_depth, self.n_classes_, self.seed, self.alpha, self.l_reg, self.init_weight, self.mode, self.loss)
+        self.model = PyBPE.BiasedProxEnsemble(self.max_depth, self.n_classes_, self.seed, self.alpha, self.l_reg, self.init_weight, self.mode, self.loss)
 
         epochs = self.epochs
         batch_size = self.batch_size
@@ -99,7 +99,7 @@ class BiasedProxEnsemble:
 
                     lsum = self.model.next(data, target)
                     output = self.predict_proba(data)
-                    
+                    # print(output)
                     epoch_loss += lsum / data.shape[0]
                     epoch_nonzero += self.model.num_trees()
                     accuracy = accuracy_score(target, output.argmax(axis=1))*100.0
@@ -118,7 +118,8 @@ class BiasedProxEnsemble:
                     pbar.set_description(desc)
                 
                 if self.x_test is not None and self.y_test is not None:
-                    test_accuracy = accuracy_score(self.y_test, self.predict_proba(self.x_test))*100.0
+                    pred = self.predict_proba(self.x_test)
+                    test_accuracy = accuracy_score(self.y_test, pred.argmax(axis=1))*100.0
                     desc = '[{}/{}] loss {:2.4f} acc {:2.4f} nonzero {:2.4f} test-acc {:2.4f}'.format(
                         epoch, 
                         epochs-1, 

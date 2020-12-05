@@ -7,6 +7,7 @@ from datetime import datetime
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import KFold
 import argparse
+from scipy.special import softmax
 
 # from sklearn.metrics import make_scorer, accuracy_score
 from sklearn.preprocessing import MinMaxScaler
@@ -16,12 +17,12 @@ from experiment_runner.experiment_runner_v2 import run_experiments, get_ctor_arg
 sys.path.append("../")
 from BiasedProxEnsemble import BiasedProxEnsemble
 
-# def cross_entropy(pred, target, epsilon=1e-12):
-#     #pred = np.clip(pred, epsilon, 1.0 - epsilon)
-#     p = softmax(pred, axis=1)
-#     log_likelihood = -target*np.log(p)
+def cross_entropy(pred, target, epsilon=1e-12):
+    #pred = np.clip(pred, epsilon, 1.0 - epsilon)
+    p = softmax(pred, axis=1)
+    log_likelihood = -target*np.log(p)
 
-#     return log_likelihood
+    return log_likelihood
 
 # def cross_entropy_deriv(pred, target):
 #     m = target.shape[0]
@@ -38,6 +39,13 @@ def pre(cfg):
         if key in tmpcfg:
             expected[key] = tmpcfg[key]
     
+    i = cfg["run_id"]
+    itrain, itest = cfg["idx"][i]
+    scores = {}
+    X = cfg["X"]
+    Y = cfg["Y"]
+    expected["x_test"] = X[itest]
+    expected["y_test"] = Y[itest]
     model = model_ctor(**expected)
     return model
 
@@ -48,20 +56,16 @@ def post(cfg, model):
     X = cfg["X"]
     Y = cfg["Y"]
 
-    if isinstance(model, BiasedProxEnsemble):
-        proba, _ = model.predict_proba(X[itest])
-    else:
-        proba = model.predict_proba(X[itest])
+    proba = model.predict_proba(X[itest])
 
     target_one_hot = np.array([ [1 if t == c else 0 for c in model.classes_] for t in Y[itest]])
     scores["test_accuracy"] = accuracy_score(Y[itest], proba.argmax(axis=1))*100.0
     scores["test_loss"] = cross_entropy(proba, target_one_hot).sum(axis=1).mean()
 
-    if hasattr(model, "estimator_weights_"):
-        scores["n_estimators"] = np.count_nonzero(model.estimator_weights_)
+    if isinstance(model, BiasedProxEnsemble):
+        scores["n_estimators"] = model.num_trees()
     else:
         scores["n_estimators"] = len(model.estimators_) 
-
     return scores
 
 def fit(cfg, model):
@@ -160,13 +164,22 @@ for l in [ 1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3]:
     models.append(
         {
             "model":BiasedProxEnsemble,
-            "max_depth":20,
-            "alpha":1e-2,
-            "l_reg":1e-4, 
+            # "max_depth":15,
+            # "alpha":1e-1,
+            # "l_reg":7e-2,  
+            # "loss":"mse",
+            # "mode":"trained",
+            # "batch_size":1024,
+
+            "max_depth":5,
+            "alpha":0.25,
+            "l_reg":2e-2,
             "loss":"cross-entropy",
-            "mode":"random",
-            "epochs":100,
-            "batch_size":256,
+            "mode":"trained",
+            "batch_size":128,
+
+            "init_weight":1.0,
+            "epochs":1000,
             "verbose":True,
             "X":X,
             "Y":Y,
