@@ -11,12 +11,11 @@ from sklearn.metrics import accuracy_score
 #from PyBPE import BiasedProxEnsemble
 import PyBPE
 
-class BiasedProxEnsemble:
+class SGDEnsemble:
     def __init__(self,  
                 max_depth,
-                max_trees = 0,
-                alpha = 1e-1,
-                l_reg = 1e-2,
+                max_trees,
+                step_size = 1e-1,
                 loss = "cross-entropy",
                 mode = "random",
                 init_weight = 0,
@@ -31,12 +30,11 @@ class BiasedProxEnsemble:
         assert loss in ["mse","cross-entropy"], "Currently only {mse, cross entropy} loss is supported"
         assert mode in ["random", "trained"], "Currently only {random, trained} mode supported"
         assert max_depth >= 1, "max_depth should be at-least 1!"
-        assert max_trees >= 0, "max_trees should be at-least 0!"
+        assert max_trees >= 1, "max_trees should be at-least 1!"
 
         self.max_depth = max_depth
         self.max_trees = max_trees
-        self.alpha = alpha
-        self.l_reg = l_reg
+        self.step_size = step_size
         self.loss = loss
         self.mode = mode
         self.init_weight = init_weight
@@ -84,7 +82,7 @@ class BiasedProxEnsemble:
         self.n_classes_ = len(self.classes_)
         self.n_outputs_ = self.n_classes_
 
-        self.model = PyBPE.BiasedProxEnsemble(self.max_depth, self.max_trees, self.n_classes_, self.seed, self.alpha, self.l_reg, self.init_weight, self.mode, self.loss)
+        self.model = PyBPE.BiasedProxEnsemble(self.max_depth, self.max_trees, self.n_classes_, self.seed, self.step_size, 0, self.init_weight, self.mode, self.loss)
 
         epochs = self.epochs
         batch_size = self.batch_size

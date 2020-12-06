@@ -46,6 +46,13 @@ private:
         return idx;
     }
 
+    /**
+     * @brief  Compute the weighted gini score for the given split. Weighted means here, that we weight the individual gini scores of left and right with the proportion of data in each child node. This leads to slightly more balanced splits.
+     * @note   
+     * @param  &left: Class-counts for the left child
+     * @param  &right: Class-couts for the right child.
+     * @retval The weighted gini score.
+     */
     static data_t gini(std::vector<unsigned int> const &left, std::vector<unsigned int> const &right) {
         unsigned int sum_left = std::accumulate(left.begin(), left.end(), data_t(0));
         unsigned int sum_right = std::accumulate(right.begin(), right.end(), data_t(0));
@@ -65,14 +72,22 @@ private:
         return sum_left / static_cast<data_t>(sum_left + sum_right) * gleft + sum_right /  static_cast<data_t>(sum_left + sum_right) * gright;
     }
     
+    /**
+     * @brief  Compute the best split for the given data. This algorithm has O(d * N log N) runtime, where N is the number of examples and d is the number of features.
+     * This implementation ensures that the returned split splits the data so that each child is non-empty if applied to the given data (at-least one example form X is routed towards left and towards right). The only exception occurs if X is empty or contains one example. In this case we return feature 0 with threshold 1. Threshold-values are placed in the middle between two samples. 
+     * If two splits are equally good, then the first split is chosen. Note that this introduces a slight bias towards the first features. 
+     * TODO: This code assumes that all features are [0,1] for the X.size() <= 1. Change that 
+     * TODO: Change code for tie-breaking
+     * @note   
+     * @param  &X: The example-set which is used to compute the splitting
+     * @param  &Y: The label-set which is used to compute the splitting
+     * @param  n_classes: The number of classes
+     * @retval The best split as a std::pair<data_t, unsigned int>(best_threshold, best_feature) where the first entry is the threshold and the second entry the feature index.
+     */
     static auto best_split(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, unsigned long n_classes) {
         if (X.size() <= 1) {
             return std::make_pair<data_t, unsigned int>(1.0, 0);
         }
-
-        // if (X.size() == 2) {
-        //     return std::make_pair<data_t, unsigned int>(static_cast<data_t>(X[0][0]), 0);
-        // }
 
         unsigned int n_data = X.size();
         unsigned int n_features = X[0].size();
@@ -80,7 +95,15 @@ private:
         data_t overall_best_gini = 0;
         unsigned int overall_best_feature = 0;
         data_t overall_best_threshold = 0;
+        bool split_set = false;
         for (unsigned int i = 0; i < n_features; ++i) {
+            // In order to compute the best spliting threshold for the current feature we need to evaluate every possible split value.
+            // These can be up to n_data - 1 points and for each threshold we need to evaluate if they belong to the left or right child. 
+            // The naive implementation thus require O(n_data**2) runtime. We use a slightly more optimized version which requires O(n_data * log n_data). 
+            // To do so, we first the examples according to their feature values and compute the initial statistics for the left/right child. Then, we gradually 
+            // move the split-threshold to the next value and onyl update the statistics.
+
+            // Copy feature values and targets into new vector
             std::vector<std::pair<data_t, unsigned int>> f_values(n_data);
             for (unsigned int j = 0; j < n_data; ++j) {
                 f_values[j] = std::make_pair(X[j][i], Y[j]);
@@ -90,31 +113,52 @@ private:
             std::sort(f_values.begin(), f_values.end());
             data_t max_t = f_values[f_values.size() - 1].first;
 
+            // Prepare class statistics
             std::vector<unsigned int> left_cnts(n_classes);
             std::vector<unsigned int> right_cnts(n_classes);
             std::fill(left_cnts.begin(), left_cnts.end(), 0);
             std::fill(right_cnts.begin(), right_cnts.end(), 0);
             
-            left_cnts[f_values[0].second] += 1;
-            for (unsigned int j = 1; j < f_values.size(); ++j) {
-                auto const & f = f_values[j];
-                right_cnts[f.second] += 1;
+            // Compute initial statistics if we split at the first possible split location. Usually we assume that
+            // 0.5 * (f_values[0] + f_values[1]) would be an appropriate split value. However, in some edge cases
+            // f_values[0] == f_values[1]. Thus, we first have to look for the first index j where f_values[0] != f_values[i]
+            // for splitting. While doing so, we update the class counts for the left / right child.
+            bool first = true;
+            unsigned int begin = 0; 
+            data_t best_threshold;
+            for (unsigned int j = 0; j < f_values.size(); ++j) {
+                auto cur_f = f_values[j].second;
+                if (f_values[j].first == f_values[0].first) {
+                    left_cnts[f_values[j].second] += 1;
+                } else {
+                    if (first) {
+                        best_threshold = 0.5 * (f_values[0].first + f_values[j].first); 
+                        first = false;
+                        begin++;
+                    }
+                    right_cnts[f_values[j].second] += 1;
+                }
             }
             
+            if (first) {
+                // We never choose a threshold which means that f_values[0] = f_values[1] = .. = f_values[end]. 
+                // This will not give us a good simplit, so ignore this feature
+                break;
+            }
+            // Compute the corresponding gini score 
             data_t best_gini = gini(left_cnts, right_cnts);
-            data_t best_threshold = 0.5 * (f_values[0].first + f_values[1].first); 
-            // std::cout << "Checking feature " << 0 << " with threshold " << 0.5 * (f_values[0].first + f_values[1].first) << " and score " << best_gini << std::endl;
 
-            // for (unsigned int j = 1; j < f_values.size() - 1; ++j) {
-            unsigned int j = 1;
+            // Repeat what we have done above with the initial scanning, but now update left_cnts / right_cnts appropriately.
+            unsigned int j = begin;
             while (f_values[j].first < max_t) {
+                // Update the class statistics by virtually placing the current split threshold over the next example
                 auto const & f = f_values[j];
                 left_cnts[f.second] += 1;
                 right_cnts[f.second] -= 1;
 
+                // If some examples have the same feature, just ignore this. Only evaluate new splits where the feature value changes.
                 if (f_values[j - 1].first != f_values[j].first) {
                     data_t cur_gini = gini(left_cnts, right_cnts);
-                    // std::cout << "Checking feature " << i << " with threshold " << 0.5 * (f_values[j].first + f_values[j + 1].first) << " and score " << cur_gini << std::endl;
                     if (cur_gini < best_gini) {
                         best_gini = cur_gini;
                         best_threshold = 0.5 * (f_values[j].first + f_values[j + 1].first);
@@ -123,66 +167,101 @@ private:
                 ++j;
             }
 
-            // TODO ADD RANDOM STUFF IN CASE OF A TIE
-            if (i == 0 || best_gini < overall_best_gini) {
+            // Check if we not have already select a split or if this split is better than the other splits we found so far.
+            // If so, then set this split
+            if (!split_set || best_gini < overall_best_gini) {
                 overall_best_gini = best_gini;
                 overall_best_feature = i;
                 overall_best_threshold = best_threshold;
+                split_set = true;
             } 
         }
 
-        // std::cout << "Best split is " << overall_best_feature << " with threshold " << overall_best_threshold <<  std::endl;
         return std::make_pair(overall_best_threshold, overall_best_feature);
     }
 
+     /**
+     * @brief  Compute a random split for the given data. This algorithm has O(d * log d + d * N) runtime in the worst case, but should usually run in O(d * log d + N), where N is the number of examples and d is the number of features.
+     * This implementation ensures that the returned split splits the data so that each child is non-empty if applied to the given data (at-least one example form X is routed towards left and towards right). The only exception occurs if X is empty or contains one example. In this case we return feature 0 with threshold 1. Threshold-values are placed in the middle between two samples. 
+     * TODO: This code assumes that all features are [0,1] for the X.size() <= 1 or in case of invalid splits. Change that 
+     * @note   
+     * @param  &X: The example-set which is used to compute the splitting
+     * @param  &Y: The label-set which is used to compute the splitting
+     * @param  n_classes: The number of classes
+     * @retval The best split as a std::pair<data_t, unsigned int>(best_threshold, best_feature) where the first entry is the threshold and the second entry the feature index.
+     */
     static auto random_split(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, unsigned long seed) {
         if (X.size() <= 1) {
             return std::make_pair<data_t, unsigned int>(1.0, 0);
         }
 
+        // We want to split at a random feature. However, we also want to ensure that the left / right child receive at-least one example with this random
+        // split. Sometimes there are features which cannot ensure this (e.g. a binary features are '1'). Thus, we iterate over a random permutation of features 
+        // and return as soon as we find a valid split
         std::vector<unsigned int> features(X[0].size());
         std::iota(std::begin(features), std::end(features), 0); 
-        std::random_shuffle(features.begin(), features.end());
+
+        std::mt19937 gen(seed);
+        std::random_shuffle(features.begin(), features.end(), gen);
 
         for (auto const & f: features) {
-            std::vector<data_t> tmp(X.size());
-            for (unsigned int i = 0; i < X.size(); ++i) {
-                tmp[i] = X[i][f];
+            // We need to find the next smallest and next biggest value of the data to ensure that left/right will receive at-least 
+            // one example. This is a brute force implementation in O(N)
+            data_t smallest, second_smallest;
+            if(X[0][f] <X[1][f]){
+                smallest = X[0][f];
+                second_smallest = X[1][f];
+            } else {
+                smallest = X[1][f];
+                second_smallest = X[0][f];
             }
-            
-            // By default sort sorts after the first feature
-            std::sort(tmp.begin(), tmp.end());
-            data_t lower = tmp[0];
-            for(unsigned int i = 1;i < tmp.size(); ++i) {
-                if (lower != tmp[i]) {
-                    lower = tmp[i];
-                    break;
-                } 
-            }
-            if (lower == tmp[0]) continue;
 
-            data_t upper = tmp[tmp.size() - 1];
-            for(int i = tmp.size() - 2;i >= 0; --i) {
-                if (upper != tmp[i]) {
-                    upper = tmp[i];
-                    break;
-                } 
+            data_t biggest, second_biggest;
+            if(X[0][f] > X[1][f]){
+                biggest = X[0][f];
+                second_biggest = X[1][f];
+            } else {
+                biggest = X[1][f];
+                second_biggest = X[0][f];
             }
-            if (upper == tmp[tmp.size() - 1]) continue;
 
-            std::mt19937 gen(seed);
-            std::uniform_real_distribution<> fdis(lower, upper); 
-            int ftmp = f;
-            // So usually I would expect the following line to work, but for some reason it does not. Is this a
-            // gcc bug?
+            for (unsigned int i = 2; i < X.size(); ++i) {
+                if(X[i][f] > smallest ) { 
+                    second_smallest = smallest;
+                    smallest = X[i][f];
+                } else if(X[i][f] < second_smallest){
+                    second_smallest = X[i][f];
+                }
+
+                if(X[i][f] > biggest ) { 
+                    second_biggest = biggest;
+                    biggest = X[i][f];
+                } else if(X[i][f] > second_biggest){
+                    second_biggest = X[i][f];
+                }
+            }
+
+            // This is not a valid split if we cannot ensure that the left / right child receive at-least one example.
+            if (second_smallest == smallest || second_biggest == biggest) continue;
+            std::uniform_real_distribution<> fdis(second_smallest, second_biggest); 
+
+            // So usually I would expect the following line to work, but for some reason it does not. Is this a gcc bug?
             //return std::make_pair<data_t, unsigned int>(static_cast<data_t>(fdis(gen)), f);
+            int ftmp = f;
             return std::make_pair<data_t, unsigned int>(static_cast<data_t>(fdis(gen)), ftmp);
         }
 
-        // If this is reached no valid split has been found
+        // If this is reached, then no valid split has been found and we default to the default split
         return std::make_pair<data_t, unsigned int>(1.0, 0);
     }
 
+    /**
+     * @brief  
+     * @note   
+     * @param  &X: 
+     * @param  &Y: 
+     * @retval None
+     */
     void random_nodes(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
         std::mt19937 gen(seed);
         std::uniform_int_distribution<> idis(0, X[0].size() - 1);

@@ -125,11 +125,19 @@ int main() {
     unsigned int epochs = 5000;
     unsigned int batch_size = 16;
 
-    BiasedProxEnsemble est(1, 128, n_classes, 0, 1e-2, 0, 1.0, TREE_TYPE::RANDOM, mse, mse_deriv);
+    unsigned int max_depth = 5;
+    unsigned int max_trees = 128;
+    unsigned long seed = 1235;
+    data_t step_size = 1e-1;
+    data_t l_reg = 1e-2;
+    data_t init_weight = 1.0;
+    data_t n_trees = 1.0;
+
+    BiasedProxEnsemble est(max_depth, max_trees, n_classes, seed, step_size, l_reg, init_weight, TREE_TYPE::RANDOM, mse, mse_deriv);
     start = std::chrono::steady_clock::now();
 
     for (unsigned int i = 0; i < epochs; ++i) {
-        std::random_shuffle(batch_idx.begin(), batch_idx.end());
+        std::random_shuffle(batch_idx.begin(), batch_idx.end(), std::default_random_engine(seed));
         
         unsigned int cnt = 0;
         data_t loss_epoch = 0;
