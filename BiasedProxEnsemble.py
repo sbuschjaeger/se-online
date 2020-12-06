@@ -14,8 +14,9 @@ import PyBPE
 class BiasedProxEnsemble:
     def __init__(self,  
                 max_depth,
-                alpha = 1e-3,
-                l_reg = 1e-5,
+                max_trees = 0,
+                alpha = 1e-1,
+                l_reg = 1e-2,
                 loss = "cross-entropy",
                 mode = "random",
                 init_weight = 0,
@@ -32,6 +33,7 @@ class BiasedProxEnsemble:
         assert max_depth >= 1, "max_depth should be at-least 1!"
 
         self.max_depth = max_depth
+        self.max_trees = max_trees
         self.alpha = alpha
         self.l_reg = l_reg
         self.loss = loss
@@ -81,7 +83,7 @@ class BiasedProxEnsemble:
         self.n_classes_ = len(self.classes_)
         self.n_outputs_ = self.n_classes_
 
-        self.model = PyBPE.BiasedProxEnsemble(self.max_depth, self.n_classes_, self.seed, self.alpha, self.l_reg, self.init_weight, self.mode, self.loss)
+        self.model = PyBPE.BiasedProxEnsemble(self.max_depth, self.max_trees, self.n_classes_, self.seed, self.alpha, self.l_reg, self.init_weight, self.mode, self.loss)
 
         epochs = self.epochs
         batch_size = self.batch_size

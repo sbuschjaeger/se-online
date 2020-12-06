@@ -11,6 +11,8 @@
 
 #include "Datatypes.h"
 
+enum TREE_TYPE {TRAIN, FULLY_RANDOM, RANDOM};
+
 class Node {
 public:
     data_t threshold;
@@ -27,6 +29,8 @@ private:
     unsigned int start_leaf;
     unsigned int n_nodes;
     unsigned int n_classes;
+    unsigned long seed;
+    TREE_TYPE tree_type;
 
     inline unsigned int node_index(std::vector<data_t> const &x) const {
         unsigned int idx = 0;
@@ -40,39 +44,6 @@ private:
             }
         }
         return idx;
-    }
-
-    void random_nodes(unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
-        std::mt19937 gen(seed);
-        std::uniform_int_distribution<> idis(0, X[0].size() - 1);
-        std::uniform_real_distribution<> fdis(0,1);
-
-        nodes.resize(n_nodes);
-        for (unsigned int i = 0; i < n_nodes; ++i) {
-            auto feature =  idis(gen);
-            //std::uniform_real_distribution<> fdis(amin(feature), amax(feature));
-            nodes[i].feature = feature;
-            nodes[i].threshold = fdis(gen);
-
-            if (i >= start_leaf) {
-                nodes[i].preds.resize(n_classes);
-                std::fill(nodes[i].preds.begin(), nodes[i].preds.end(), 0);
-            } 
-        }
-
-        for (unsigned int i = 0; i < X.size(); ++i) {
-            nodes[node_index(X[i])].preds[Y[i]] += 1;
-        }
-
-        for (unsigned int i = start_leaf; i < n_nodes; ++i) {
-            auto & preds = nodes[i].preds;
-            data_t sum = std::accumulate(preds.begin(), preds.end(),data_t(0));
-            if (sum > 0) {
-                std::transform(preds.begin(), preds.end(), preds.begin(), [sum](auto& c){return 1.0/sum*c;});
-            } else {
-                std::fill(preds.begin(), preds.end(), 1.0/n_classes);
-            }
-        }
     }
 
     static data_t gini(std::vector<unsigned int> const &left, std::vector<unsigned int> const &right) {
@@ -93,9 +64,8 @@ private:
 
         return sum_left / static_cast<data_t>(sum_left + sum_right) * gleft + sum_right /  static_cast<data_t>(sum_left + sum_right) * gright;
     }
-
-    // TODO CHECK IF THIS REALLY BUILTS A "PERFECT" TREE
-    static auto best_split(unsigned int n_classes, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
+    
+    static auto best_split(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, unsigned long n_classes) {
         if (X.size() <= 1) {
             return std::make_pair<data_t, unsigned int>(1.0, 0);
         }
@@ -165,6 +135,87 @@ private:
         return std::make_pair(overall_best_threshold, overall_best_feature);
     }
 
+    static auto random_split(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, unsigned long seed) {
+        if (X.size() <= 1) {
+            return std::make_pair<data_t, unsigned int>(1.0, 0);
+        }
+
+        std::vector<unsigned int> features(X[0].size());
+        std::iota(std::begin(features), std::end(features), 0); 
+        std::random_shuffle(features.begin(), features.end());
+
+        for (auto const & f: features) {
+            std::vector<data_t> tmp(X.size());
+            for (unsigned int i = 0; i < X.size(); ++i) {
+                tmp[i] = X[i][f];
+            }
+            
+            // By default sort sorts after the first feature
+            std::sort(tmp.begin(), tmp.end());
+            data_t lower = tmp[0];
+            for(unsigned int i = 1;i < tmp.size(); ++i) {
+                if (lower != tmp[i]) {
+                    lower = tmp[i];
+                    break;
+                } 
+            }
+            if (lower == tmp[0]) continue;
+
+            data_t upper = tmp[tmp.size() - 1];
+            for(int i = tmp.size() - 2;i >= 0; --i) {
+                if (upper != tmp[i]) {
+                    upper = tmp[i];
+                    break;
+                } 
+            }
+            if (upper == tmp[tmp.size() - 1]) continue;
+
+            std::mt19937 gen(seed);
+            std::uniform_real_distribution<> fdis(lower, upper); 
+            int ftmp = f;
+            // So usually I would expect the following line to work, but for some reason it does not. Is this a
+            // gcc bug?
+            //return std::make_pair<data_t, unsigned int>(static_cast<data_t>(fdis(gen)), f);
+            return std::make_pair<data_t, unsigned int>(static_cast<data_t>(fdis(gen)), ftmp);
+        }
+
+        // If this is reached no valid split has been found
+        return std::make_pair<data_t, unsigned int>(1.0, 0);
+    }
+
+    void random_nodes(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
+        std::mt19937 gen(seed);
+        std::uniform_int_distribution<> idis(0, X[0].size() - 1);
+        std::uniform_real_distribution<> fdis(0,1);
+
+        nodes.resize(n_nodes);
+        for (unsigned int i = 0; i < n_nodes; ++i) {
+            auto feature =  idis(gen);
+            //std::uniform_real_distribution<> fdis(amin(feature), amax(feature));
+            nodes[i].feature = feature;
+            nodes[i].threshold = fdis(gen);
+
+            if (i >= start_leaf) {
+                nodes[i].preds.resize(n_classes);
+                std::fill(nodes[i].preds.begin(), nodes[i].preds.end(), 0);
+            } 
+        }
+
+        for (unsigned int i = 0; i < X.size(); ++i) {
+            nodes[node_index(X[i])].preds[Y[i]] += 1;
+        }
+
+        for (unsigned int i = start_leaf; i < n_nodes; ++i) {
+            auto & preds = nodes[i].preds;
+            data_t sum = std::accumulate(preds.begin(), preds.end(),data_t(0));
+            if (sum > 0) {
+                std::transform(preds.begin(), preds.end(), preds.begin(), [sum](auto& c){return 1.0/sum*c;});
+            } else {
+                std::fill(preds.begin(), preds.end(), 1.0/n_classes);
+            }
+        }
+    }
+
     void trained_nodes(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
         // <std::pair<std::vector<std::vector<data_t>>, std::vector<unsigned int>>
         std::queue<
@@ -179,7 +230,12 @@ private:
             auto data = to_expand.front();
             to_expand.pop();
 
-            auto split = best_split(n_classes, data.first, data.second);
+            std::pair<data_t, unsigned int> split;
+            if (tree_type == TRAIN) {
+                split = best_split(data.first, data.second, n_classes);
+            } else {
+                split = random_split(data.first, data.second, seed);
+            }
             auto t = split.first;
             auto f = split.second;
             
@@ -233,13 +289,13 @@ private:
 
 public:
 
-    Tree(bool use_random, unsigned int max_depth, unsigned int n_classes, unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) : n_classes(n_classes) {
+    Tree(TREE_TYPE tree_type, unsigned int max_depth, unsigned int n_classes, unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) : n_classes(n_classes), seed(seed), tree_type(tree_type) {
 
         start_leaf = std::pow(2,max_depth) - 1;
         n_nodes = std::pow(2,max_depth + 1) - 1;
 
-        if (use_random) {
-            random_nodes(seed, X, Y);
+        if (tree_type == FULLY_RANDOM) {
+            random_nodes(X, Y);
         } else {
             trained_nodes(X, Y);
         }

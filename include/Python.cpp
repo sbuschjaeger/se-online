@@ -13,20 +13,30 @@ private:
 public:
     BiasedProxEnsembleAdaptor(
         unsigned int max_depth,
+        unsigned int max_trees,
         unsigned int n_classes, 
         unsigned long seed, 
-        data_t alpha,
+        data_t step_size,
         data_t lambda,
         data_t init_weight, 
         const std::string mode, 
         const std::string loss
     ) { 
-        const bool use_random = (mode == "random");
+        TREE_TYPE tree_type;
+        if (mode == "random") {
+            tree_type = TREE_TYPE::RANDOM;
+        } else if (mode == "fully-random") {
+            tree_type = TREE_TYPE::FULLY_RANDOM;
+        } else if (mode == "train") {
+            tree_type = TREE_TYPE::TRAIN;
+        } else {
+            throw "Currently only the three modes {random, fully-random, train} are supported for trees, but you have " + mode + ".";
+        }
 
         if (loss == "cross-entropy") {
-            model = new BiasedProxEnsemble(max_depth, n_classes, seed, alpha, lambda, init_weight, use_random, cross_entropy, cross_entropy_deriv);
+            model = new BiasedProxEnsemble(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight, tree_type, cross_entropy, cross_entropy_deriv);
         } else {
-            model = new BiasedProxEnsemble(max_depth, n_classes, seed, alpha, lambda, init_weight, use_random, mse, mse_deriv);
+            model = new BiasedProxEnsemble(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight, tree_type, mse, mse_deriv);
         }
     }
 
@@ -48,8 +58,20 @@ public:
         }
     }
 
+    std::vector<data_t> weights() const {
+        if (model != nullptr) {
+            return model->weights();
+        } else {
+            return std::vector<data_t>();
+        }
+    }
+
     unsigned int num_trees() const {
-        return model->num_trees();
+        if (model != nullptr) {
+            return model->num_trees();
+        } else {
+            return 0;
+        }
     }
 };
 
@@ -57,7 +79,7 @@ namespace py = pybind11;
 PYBIND11_MODULE(PyBPE, m) {
 
 py::class_<BiasedProxEnsembleAdaptor>(m, "BiasedProxEnsemble")
-    .def(py::init<unsigned int, unsigned int, unsigned long, data_t, data_t, data_t, std::string, std::string>(), py::arg("max_depth") = 10, py::arg("n_classes") = 1, py::arg("seed") = 1234, py::arg("alpha") = 0.01, py::arg("l_reg") = 0.001, py::arg("init_weight") = 0, py::arg("mode") = "random", py::arg("loss") = "cross-entropy")
+    .def(py::init<unsigned int, unsigned int, unsigned int, unsigned long, data_t, data_t, data_t, std::string, std::string>(), py::arg("max_depth") = 10, py::arg("max_trees") = 0, py::arg("n_classes") = 1, py::arg("seed") = 1234, py::arg("step_size") = 0.01, py::arg("l_reg") = 0.001, py::arg("init_weight") = 0, py::arg("mode") = "random", py::arg("loss") = "cross-entropy")
     .def ("next", &BiasedProxEnsembleAdaptor::next, py::arg("X"), py::arg("Y"))
     .def ("num_trees", &BiasedProxEnsembleAdaptor::num_trees)
     .def ("predict_proba", &BiasedProxEnsembleAdaptor::predict_proba, py::arg("X"));

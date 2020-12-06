@@ -9,6 +9,7 @@ from sklearn.model_selection import KFold
 import argparse
 from scipy.special import softmax
 
+from sklearn.ensemble import RandomForestClassifier
 # from sklearn.metrics import make_scorer, accuracy_score
 from sklearn.preprocessing import MinMaxScaler
 
@@ -71,7 +72,15 @@ def post(cfg, model):
 def fit(cfg, model):
     i = cfg["run_id"]
     itrain, itest = cfg["idx"][i]
-    model.fit(cfg["X"][itrain],cfg["Y"][itrain])
+    
+    X, Y = cfg["X"],cfg["Y"]
+
+    tmp = RandomForestClassifier(n_estimators=128, max_depth = cfg["max_depth"])
+    tmp.fit(X[itrain],Y[itrain])
+    proba = tmp.predict_proba(X[itest])
+
+    print("RF: ", accuracy_score(Y[itest], proba.argmax(axis=1))*100.0)
+    model.fit(X[itrain], Y[itrain])
     return model
 
 parser = argparse.ArgumentParser()
@@ -172,11 +181,12 @@ for l in [ 1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3]:
             # "batch_size":1024,
 
             "max_depth":5,
-            "alpha":0.25,
-            "l_reg":2e-2,
-            "loss":"cross-entropy",
-            "mode":"trained",
-            "batch_size":128,
+            "max_trees":0,
+            "alpha":0.5,
+            "l_reg":6e-2,
+            "loss":"mse",
+            "mode":"random",
+            "batch_size":32,
 
             "init_weight":1.0,
             "epochs":1000,

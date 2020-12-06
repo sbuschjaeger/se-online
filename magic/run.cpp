@@ -114,10 +114,7 @@ int main() {
     
     auto start = std::chrono::steady_clock::now();
     std::cout << "NORMALIZING" << std::endl;
-
-    Tree t(false, 1, 2, 12345, X, Y);
     X = normalize(X);
-    
     auto end = std::chrono::steady_clock::now();
     std::chrono::duration<double> runtime_seconds = end-start;
     std::cout << "DONE TIME WAS " <<  runtime_seconds.count() << " SECONDS" << std::endl;
@@ -128,7 +125,7 @@ int main() {
     unsigned int epochs = 5000;
     unsigned int batch_size = 16;
 
-    BiasedProxEnsemble est(1, n_classes, 0, 1e-2, 0, 1.0, false, mse, mse_deriv);
+    BiasedProxEnsemble est(1, 128, n_classes, 0, 1e-2, 0, 1.0, TREE_TYPE::RANDOM, mse, mse_deriv);
     start = std::chrono::steady_clock::now();
 
     for (unsigned int i = 0; i < epochs; ++i) {
