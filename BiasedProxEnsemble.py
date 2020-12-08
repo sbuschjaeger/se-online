@@ -7,128 +7,69 @@ from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.multiclass import unique_labels
 from sklearn.metrics import accuracy_score
 
+from scipy.special import softmax
+
+from OnlineLearner import OnlineLearner
 # from plotille import histogram
 #from PyBPE import BiasedProxEnsemble
 import PyBPE
 
-class BiasedProxEnsemble:
+class BiasedProxEnsemble(OnlineLearner):
     def __init__(self,  
                 max_depth,
                 max_trees = 0,
-                alpha = 1e-1,
+                step_size = 1e-1,
                 l_reg = 1e-2,
                 loss = "cross-entropy",
                 mode = "random",
                 init_weight = 0,
-                epochs = 50,
-                batch_size = 128,
-                seed = 1234,
-                verbose = True, 
-                x_test = None, 
-                y_test = None, 
-                eval_every = 5):
+                *args, **kwargs
+                ):
                         
-        assert loss in ["mse","cross-entropy"], "Currently only {mse, cross entropy} loss is supported"
-        assert mode in ["random", "trained"], "Currently only {random, trained} mode supported"
+        assert loss in ["mse","cross-entropy"], "Currently only {mse, cross entropy, fully-random} loss is supported"
+        assert mode in ["random", "trained", "fully-random"], "Currently only {random, trained} mode supported"
         assert max_depth >= 1, "max_depth should be at-least 1!"
         assert max_trees >= 0, "max_trees should be at-least 0!"
+        
+        super().__init__(*args, **kwargs)
 
         self.max_depth = max_depth
         self.max_trees = max_trees
-        self.alpha = alpha
+        self.step_size = step_size
         self.l_reg = l_reg
         self.loss = loss
         self.mode = mode
         self.init_weight = init_weight
-        self.epochs = epochs
-        self.batch_size = batch_size
-        self.verbose = verbose
-        self.x_test = x_test
-        self.y_test = y_test
-        self.eval_every = eval_every
         self.model = None
-
-        if seed is None:
-            self.seed = 1234
-        else:
-            self.seed= seed
-
-        np.random.seed(seed)
-        random.seed(seed)
     
     def predict_proba(self, X):
         assert self.model is not None, "Call fit before calling predict_proba!"
         return np.array(self.model.predict_proba(X))
 
-    # Modified from https://stackoverflow.com/questions/38157972/how-to-implement-mini-batch-gradient-descent-in-python
-    def create_mini_batches(self, inputs, targets, batch_size, shuffle=False):
-        assert inputs.shape[0] == targets.shape[0]
-        indices = np.arange(inputs.shape[0])
-        if shuffle:
-            np.random.shuffle(indices)
-        
-        start_idx = 0
-        while start_idx < len(indices):
-            if start_idx + batch_size > len(indices) - 1:
-                excerpt = indices[start_idx:]
-            else:
-                excerpt = indices[start_idx:start_idx + batch_size]
-            start_idx += batch_size
-            yield inputs[excerpt], targets[excerpt]
+    def next(self, data, target, train = False):
+        if train:
+            lsum = self.model.next(data, target)
+            output = self.predict_proba(data)
+            return {"loss": lsum / data.shape[0], "num_trees": self.model.num_trees()}, output
+        else:
+            output = self.predict_proba(data)
+            if self.loss == "mse":
+                target_one_hot = np.array( [ [1 if y == i else 0 for i in range(self.n_classes_)] for y in target] )
+                loss = (output - target_one_hot) * (output - target_one_hot)
+            elif self.loss == "cross-entropy":
+                target_one_hot = np.array( [ [1 if y == i else 0 for i in range(self.n_classes_)] for y in target] )
+                p = softmax(output, axis=1)
+                loss = -target_one_hot*np.log(p)
+            return {"loss": np.mean(loss), "num_trees": self.num_trees(), "num_nodes":self.num_nodes()}, output
+
+    def num_trees(self):
+        return self.model.num_trees()
+
+    def num_nodes(self):
+        return self.model.num_trees() * (2**(self.max_depth + 1) - 1)
 
     def fit(self, X, y, sample_weight = None):
-        self.X_ = X
-        self.y_ = y
-        
-        self.classes_ = unique_labels(y)
-        self.n_classes_ = len(self.classes_)
-        self.n_outputs_ = self.n_classes_
-
-        self.model = PyBPE.BiasedProxEnsemble(self.max_depth, self.max_trees, self.n_classes_, self.seed, self.alpha, self.l_reg, self.init_weight, self.mode, self.loss)
-
-        epochs = self.epochs
-        batch_size = self.batch_size
-
-        for epoch in range(epochs):
-            mini_batches = self.create_mini_batches(self.X_, self.y_, batch_size, True) 
-            epoch_loss = 0
-            batch_cnt = 0
-            avg_accuarcy = 0
-            epoch_nonzero = 0
-
-            with tqdm(total=X.shape[0], ncols=135, disable = not self.verbose) as pbar:
-                for batch in mini_batches: 
-                    data, target = batch 
-
-                    lsum = self.model.next(data, target)
-                    output = self.predict_proba(data)
-                    # print(output)
-                    epoch_loss += lsum / data.shape[0]
-                    epoch_nonzero += self.model.num_trees()
-                    accuracy = accuracy_score(target, output.argmax(axis=1))*100.0
-                    #accuracy = 0
-                    avg_accuarcy += accuracy
-                    batch_cnt += 1
-
-                    pbar.update(data.shape[0])
-                    desc = '[{}/{}] loss {:2.4f} acc {:2.4f} nonzero {:2.4f}'.format(
-                        epoch, 
-                        epochs-1, 
-                        epoch_loss/batch_cnt, 
-                        avg_accuarcy/batch_cnt,
-                        epoch_nonzero/batch_cnt
-                    )
-                    pbar.set_description(desc)
-                
-                if self.x_test is not None and self.y_test is not None:
-                    pred = self.predict_proba(self.x_test)
-                    test_accuracy = accuracy_score(self.y_test, pred.argmax(axis=1))*100.0
-                    desc = '[{}/{}] loss {:2.4f} acc {:2.4f} nonzero {:2.4f} test-acc {:2.4f}'.format(
-                        epoch, 
-                        epochs-1, 
-                        epoch_loss/batch_cnt, 
-                        avg_accuarcy/batch_cnt,
-                        epoch_nonzero/batch_cnt,
-                        test_accuracy
-                    )
-                    pbar.set_description(desc)
+        classes_ = unique_labels(y)
+        n_classes_ = len(classes_)
+        self.model = PyBPE.BiasedProxEnsemble(self.max_depth, self.max_trees, n_classes_, self.seed, self.step_size, self.l_reg, self.init_weight, self.mode, self.loss)
+        super().fit(X, y, sample_weight)

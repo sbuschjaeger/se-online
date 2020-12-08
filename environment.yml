@@ -16,6 +16,7 @@ dependencies:
   # - pandas
   # - setuptools
   - pip:
+    - jax
   #   - pylint # For VSCode 
   #   - tqdm
   #   - ray

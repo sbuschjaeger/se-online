@@ -122,7 +122,7 @@ int main() {
     std::vector<unsigned int> batch_idx(X.size());
     std::iota(std::begin(batch_idx), std::end(batch_idx), 0); 
 
-    unsigned int epochs = 5000;
+    unsigned int epochs = 2;
     unsigned int batch_size = 16;
 
     unsigned int max_depth = 5;
@@ -131,13 +131,12 @@ int main() {
     data_t step_size = 1e-1;
     data_t l_reg = 1e-2;
     data_t init_weight = 1.0;
-    data_t n_trees = 1.0;
 
     BiasedProxEnsemble est(max_depth, max_trees, n_classes, seed, step_size, l_reg, init_weight, TREE_TYPE::RANDOM, mse, mse_deriv);
     start = std::chrono::steady_clock::now();
 
     for (unsigned int i = 0; i < epochs; ++i) {
-        std::random_shuffle(batch_idx.begin(), batch_idx.end(), std::default_random_engine(seed));
+        std::shuffle(batch_idx.begin(), batch_idx.end(), std::default_random_engine(seed));
         
         unsigned int cnt = 0;
         data_t loss_epoch = 0;

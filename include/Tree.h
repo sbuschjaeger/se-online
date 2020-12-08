@@ -127,7 +127,6 @@ private:
             unsigned int begin = 0; 
             data_t best_threshold;
             for (unsigned int j = 0; j < f_values.size(); ++j) {
-                auto cur_f = f_values[j].second;
                 if (f_values[j].first == f_values[0].first) {
                     left_cnts[f_values[j].second] += 1;
                 } else {
@@ -202,7 +201,7 @@ private:
         std::iota(std::begin(features), std::end(features), 0); 
 
         std::mt19937 gen(seed);
-        std::random_shuffle(features.begin(), features.end(), gen);
+        std::shuffle(features.begin(), features.end(), gen);
 
         for (auto const & f: features) {
             // We need to find the next smallest and next biggest value of the data to ensure that left/right will receive at-least 
