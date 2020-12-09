@@ -45,7 +45,7 @@ class OnlineLearner(ABC):
                 verbose = True, 
                 x_test = None, 
                 y_test = None, 
-                out_file = "training.jsonl",
+                out_file = None,
                 eval_every_items = None,
                 eval_every_epochs = None):
                         
@@ -67,11 +67,11 @@ class OnlineLearner(ABC):
         random.seed(self.seed)
 
     @abstractmethod
-    def next(self, data, target, train=False):
+    def next(self, data, target, train=False, new_epoch = False):
         pass
 
-    def eval_test(self):
-        test_batches = create_mini_batches(self.x_test, self.y_test, self.batch_size, True) 
+    def eval(self, X, y):
+        test_batches = create_mini_batches(X, y, self.batch_size, True) 
         test_accuracy = 0
         test_loss = 0
         test_n_trees = 0
@@ -114,10 +114,12 @@ class OnlineLearner(ABC):
             last_stored = 0
 
             with tqdm(total=X.shape[0], ncols=135, disable = not self.verbose) as pbar:
+                first_batch = True
                 for batch in mini_batches: 
                     data, target = batch 
-                    metrics, output = self.next(data, target, train = True)
-                    
+                    metrics, output = self.next(data, target, train = True, new_epoch = first_batch)
+                    first_batch = False
+
                     epoch_loss += metrics["loss"]
                     n_trees += metrics["num_trees"] 
                     n_nodes += metrics["num_nodes"] 
@@ -140,7 +142,7 @@ class OnlineLearner(ABC):
                     pbar.set_description(desc)
 
                     if all(v is not None for v in [self.x_test, self.y_test, self.eval_every_items]) and self.eval_every_items > 0 and last_stored > self.eval_every_items:
-                        out_dict = self.eval_test()
+                        out_dict = self.eval(self.x_test, self.y_test)
                         out_dict["total_item_cnt"] = total_item_cnt
                         out_dict["epoch"] = epoch
                         out_str = json.dumps(out_dict)
@@ -148,7 +150,7 @@ class OnlineLearner(ABC):
                         last_stored = 0
 
                 if all(v is not None for v in [self.x_test, self.y_test, self.eval_every_items]) and self.eval_every_epochs > 0 and epoch % self.eval_every_epochs == 0:
-                    out_dict = self.eval_test()
+                    out_dict = self.eval(self.x_test, self.y_test)
                     out_dict["total_item_cnt"] = total_item_cnt
                     out_dict["epoch"] = epoch
                     out_str = json.dumps(out_dict)

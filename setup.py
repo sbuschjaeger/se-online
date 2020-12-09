@@ -41,6 +41,7 @@ class CMakeBuild(build_ext):
         cfg = 'Debug' if self.debug else 'Release'
         build_args = ['--config', cfg]
 
+        env = os.environ.copy()
         if platform.system() == "Windows":
             cmake_args += ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_{}={}'.format(cfg.upper(), extdir)]
             if sys.maxsize > 2 ** 32:
@@ -48,9 +49,12 @@ class CMakeBuild(build_ext):
             build_args += ['--', '/m']
         else:
             cmake_args += ['-DCMAKE_BUILD_TYPE=' + cfg]
+            # CMake sometimes does not really respect the compiler we are using (e.g. if installed inside a conda environment)
+            # So lets make sure we use $CC / $CXX which is set appropriatley by conda
+            cmake_args += ['-DCMAKE_C_COMPILER=' + env['CC']]
+            cmake_args += ['-DCMAKE_CXX_COMPILER=' + env['CXX']]
             build_args += ['--', '-j', str(multiprocessing.cpu_count())]
 
-        env = os.environ.copy()
         env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(env.get('CXXFLAGS', ''),
                                                               self.distribution.get_version())
         if not os.path.exists(self.build_temp):

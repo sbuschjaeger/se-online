@@ -2,26 +2,27 @@ name: psgd-ensemble
 channels:
   - conda-forge
 dependencies:
-  # - xsimd
-  # - xtl
-  # - xtensor
-  # - cmake
-  # - gcc_linux-64
-  # - gxx_linux-64
+  - xsimd
+  - xtl
+  - xtensor
+  - cmake
+  - gcc_linux-64
+  - gxx_linux-64
   - python=3.7 
   - numpy
   - pylint
   - scikit-learn
   - pip
-  # - pandas
-  # - setuptools
+  - pandas
+  - setuptools
+  - plotly
+  - jupyter
   - pip:
     - jax
-  #   - pylint # For VSCode 
-  #   - tqdm
-  #   - ray
-  #   - scikit-image
-  #   - scikit-learn
-  #   - scipy
-      - -e file:.
+    - jaxlib
+    - tqdm
+    - ray
+    - git+https://github.com/online-ml/river --upgrade
+    - -e file:experiment_runner
+  #    - -e file:.
     

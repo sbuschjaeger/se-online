@@ -30,7 +30,7 @@ public:
         } else if (mode == "train") {
             tree_type = TREE_TYPE::TRAIN;
         } else {
-            throw "Currently only the three modes {random, fully-random, train} are supported for trees, but you have " + mode + ".";
+            throw std::runtime_error("Currently only the three modes {random, fully-random, train} are supported for trees, but you provided: " + mode);
         }
 
         if (loss == "cross-entropy") {

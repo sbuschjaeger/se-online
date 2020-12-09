@@ -31,15 +31,15 @@ class SGDEnsemble(OnlineLearner):
     def __init__(self,  
                 max_depth,
                 max_trees = 0,
-                steps_size = 1e-1,
+                step_size = 1e-1,
                 loss = "cross-entropy",
                 mode = "random",
                 init_weight = 0,
                 *args, **kwargs
                 ):
                         
-        assert loss in ["mse","cross-entropy","fully-random"], "Currently only {mse, cross entropy, fully-random} loss is supported"
-        assert mode in ["random", "trained"], "Currently only {random, trained} mode supported"
+        assert loss in ["mse","cross-entropy","fully-random"], "Currently only {mse, cross entropy} loss is supported"
+        assert mode in ["random", "train", "fully-random"], "Currently only {random, train, full-random} mode supported"
         assert max_depth >= 1, "max_depth should be at-least 1!"
         assert max_trees >= 0, "max_trees should be at-least 0!"
         
@@ -47,7 +47,7 @@ class SGDEnsemble(OnlineLearner):
 
         self.max_depth = max_depth
         self.max_trees = max_trees
-        self.steps_size = steps_size
+        self.step_size = step_size
         self.loss = loss
         self.mode = mode
         self.init_weight = init_weight
@@ -57,11 +57,11 @@ class SGDEnsemble(OnlineLearner):
         assert self.model is not None, "Call fit before calling predict_proba!"
         return np.array(self.model.predict_proba(X))
 
-    def next(self, data, target, train = False):
+    def next(self, data, target, train = False, new_epoch = False):
         if train:
             lsum = self.model.next(data, target)
             output = self.predict_proba(data)
-            return {"loss": lsum / data.shape[0], "num_trees": self.model.num_trees()}, output
+            return {"loss": lsum / data.shape[0], "num_trees": self.model.num_trees(), "num_nodes":self.num_nodes()}, output
         else:
             output = self.predict_proba(data)
             if self.loss == "mse":

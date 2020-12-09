@@ -26,8 +26,8 @@ class BiasedProxEnsemble(OnlineLearner):
                 *args, **kwargs
                 ):
                         
-        assert loss in ["mse","cross-entropy"], "Currently only {mse, cross entropy, fully-random} loss is supported"
-        assert mode in ["random", "trained", "fully-random"], "Currently only {random, trained} mode supported"
+        assert loss in ["mse","cross-entropy"], "Currently only {mse, cross entropy} loss is supported"
+        assert mode in ["random", "train", "fully-random"], "Currently only {random, train, fully-random} mode supported"
         assert max_depth >= 1, "max_depth should be at-least 1!"
         assert max_trees >= 0, "max_trees should be at-least 0!"
         
@@ -46,11 +46,11 @@ class BiasedProxEnsemble(OnlineLearner):
         assert self.model is not None, "Call fit before calling predict_proba!"
         return np.array(self.model.predict_proba(X))
 
-    def next(self, data, target, train = False):
+    def next(self, data, target, train = False, new_epoch = False):
         if train:
             lsum = self.model.next(data, target)
             output = self.predict_proba(data)
-            return {"loss": lsum / data.shape[0], "num_trees": self.model.num_trees()}, output
+            return {"loss": lsum / data.shape[0], "num_trees": self.model.num_trees(), "num_nodes":self.num_nodes()}, output
         else:
             output = self.predict_proba(data)
             if self.loss == "mse":

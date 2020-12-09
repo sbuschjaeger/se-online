@@ -53,12 +53,13 @@ class RiverModel(OnlineLearner):
         n_nodes = 0
         if hasattr(self.model, "models"):
             for m in self.model.models:
-                n_nodes += m.model._n_decision_nodes + m.model._n_active_leaves
+                #n_nodes += m.model._n_decision_nodes + m.model._n_active_leaves
+                n_nodes += m._n_decision_nodes + m._n_active_leaves
         else:
             n_nodes = self.model._n_decision_nodes + self.model._n_active_leaves
         return n_nodes
 
-    def next(self, data, target, train = False):
+    def next(self, data, target, train = False, new_epoch = False):
         losses = []
         output = []
         for x, y in zip(data, target):

@@ -8,11 +8,14 @@ from datetime import datetime
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import KFold
 import argparse
+import random
 from scipy.special import softmax
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.tree import DecisionTreeClassifier
+
 # from sklearn.metrics import make_scorer, accuracy_score
 from sklearn.preprocessing import MinMaxScaler
 
@@ -34,29 +37,35 @@ def pre(cfg):
     tmpcfg = cfg
     expected = {}
     for key in get_ctor_arguments(model_ctor):
+        if key == "out_file":
+            expected["out_file"] = os.path.join(cfg["out_path"], "training.jsonl")
+        elif key == "x_test":
+            X = cfg["X"]
+            i = cfg["run_id"]
+            _, itest = cfg["idx"][i]
+            expected["x_test"] = X[itest]
+        elif key == "y_test":
+            Y = cfg["Y"]
+            i = cfg["run_id"]
+            _, itest = cfg["idx"][i]
+            expected["y_test"] = Y[itest]
+        
         if key in tmpcfg:
-            if key == "x_test":
-                X = cfg["X"]
-                i = cfg["run_id"]
-                _, itest = cfg["idx"][i]
-                expected["x_test"] = X[itest]
-            elif key == "y_test":
-                Y = cfg["Y"]
-                i = cfg["run_id"]
-                _, itest = cfg["idx"][i]
-                expected["x_test"] = Y[itest]
-            elif key == "out_file":
-                expected["out_file"] = os.path.join(cfg["out_path"], "training.jsonl")
-            else:
-                expected[key] = tmpcfg[key]
-
+            expected[key] = tmpcfg[key]
+    
     model = model_ctor(**expected)
     return model
 
 def fit(cfg, model):
     i = cfg["run_id"]
-    itrain, _ = cfg["idx"][i]
+    itrain, itest = cfg["idx"][i]
     X, Y = cfg["X"],cfg["Y"]
+
+    tree = DecisionTreeClassifier(max_depth = 1)
+    tree.fit(X[itrain], Y[itrain])
+    preds = tree.predict_proba(X[itest])
+
+    print("ACCURACY: ", accuracy_score(Y[itest], preds.argmax(axis=1))*100.0)
 
     model.fit(X[itrain], Y[itrain])
     return model
@@ -82,9 +91,8 @@ def post(cfg, model):
             p = softmax(pred, axis=1)
             loss = -target_one_hot*np.log(p)
         else:
-            raise "Wrong loss given. Loss was {} but expected {mse, cross-entropy}".format(loss_type)
+            raise "Wrong loss given. Loss was {} but expected {{mse, cross-entropy}}".format(loss_type)
         return np.mean(loss)
-
 
     test_output = model.predict_proba(X[itest])
     scores["test_accuracy"] = accuracy_score(Y[itest], test_output.argmax(axis=1))*100.0
@@ -114,12 +122,13 @@ def post(cfg, model):
 parser = argparse.ArgumentParser()
 parser.add_argument("-l", "--local", help="Run on local machine",action="store_true", default=False)
 parser.add_argument("-r", "--ray", help="Run via Ray",action="store_true", default=False)
+parser.add_argument("-m", "--multi", help="Run via multiprocessing pool",action="store_true", default=False)
 parser.add_argument("--ray_head", help="Run via Ray",action="store_true", default="auto")
 parser.add_argument("--redis_password", help="Run via Ray",action="store_true", default="5241590000000000")
 args = parser.parse_args()
 
-if (args.local and args.ray) or (not args.local and not args.ray):
-    print("Either you specified to use both, ray _and_ local mode or you specified to use none of both. Please choose either. Defaulting to `local` processing.")
+if not args.local and not args.ray and not args.multi:
+    print("No processing mode found, defaulting to `local` processing.")
     args.local = True
 
 # df = pd.read_csv("magic/magic04.data")
@@ -132,8 +141,8 @@ scaler = MinMaxScaler()
 X = scaler.fit_transform(X)
 
 n_splits = 5
-kf = KFold(n_splits=n_splits, random_state=None, shuffle=True)
-idx = np.array([(train_idx, test_idx) for train_idx, test_idx in kf.split(X)])
+kf = KFold(n_splits=n_splits, random_state=12345, shuffle=True)
+idx = np.array([(train_idx, test_idx) for train_idx, test_idx in kf.split(X)], dtype=object)
 
 if args.local:
     basecfg = {
@@ -142,6 +151,16 @@ if args.local:
         "post": post,
         "fit": fit,
         "backend": "local",
+        "verbose":True
+    }
+elif args.multi:
+    basecfg = {
+        "out_path":"results/" + datetime.now().strftime('%d-%m-%Y-%H:%M:%S'),
+        "pre": pre,
+        "post": post,
+        "fit": fit,
+        "backend": "multiprocessing",
+        "num_cpus":7,
         "verbose":True
     }
 else:
@@ -162,12 +181,12 @@ models = []
 
 
 shared_cfg = {
-    "max_depth":5,
+    "max_depth":1,
     "loss":"mse",
-    "batch_size":32,
+    "batch_size":4,
     "epochs":50,
     "verbose":True,
-    "eval_every_items":512,
+    "eval_every_items":4096,
     "eval_every_epochs":1,
     "X":X,
     "Y":Y,
@@ -176,7 +195,37 @@ shared_cfg = {
     "seed":12345
 }
 
-for T in [32, 64, 128, 256]:
+models.append (
+    {
+        "model":JaxModel,
+        "step_size":1e-2,
+        "n_trees":1,
+        "temp_scaling":1.0,
+        "temp_start":1.0,
+        "l_reg":0.0,
+        **shared_cfg
+    }
+)
+
+'''
+for T in [16, 32, 64]:
+    # Float division by zero?
+    # models.append(
+    #     {
+    #         "model":RiverModel,
+    #         "river_model":river.ensemble.AdaBoostClassifier(
+    #             model = tree.ExtremelyFastDecisionTreeClassifier(
+    #                 grace_period=100,
+    #                 split_confidence=1e-5,
+    #                 min_samples_reevaluate=100
+    #             ),
+    #             n_models = T,
+    #             seed = shared_cfg["seed"]
+    #         ),
+    #         **shared_cfg
+    #     }
+    # )
+
     models.append(
         {
             "model":RandomForestClassifier,
@@ -185,7 +234,7 @@ for T in [32, 64, 128, 256]:
             "max_depth":shared_cfg["max_depth"],
             "loss":shared_cfg["loss"],
             "n_estimators":T,
-            "verbose":False,
+            "verbose":shared_cfg["verbose"],
             "X":X,
             "Y":Y,
             "idx":idx,
@@ -202,7 +251,7 @@ for T in [32, 64, 128, 256]:
             "max_depth":shared_cfg["max_depth"],
             "loss":shared_cfg["loss"],
             "n_estimators":T,
-            "verbose":False,
+            "verbose":shared_cfg["verbose"],
             "X":X,
             "Y":Y,
             "idx":idx,
@@ -219,7 +268,7 @@ for T in [32, 64, 128, 256]:
             "loss":"deviance",
             "eval_loss":shared_cfg["loss"],
             "subsample":shared_cfg["batch_size"] / min([len(i[0]) for i in idx]),
-            "verbose":False,
+            "verbose":shared_cfg["verbose"],
             "X":X,
             "Y":Y,
             "idx":idx,
@@ -246,7 +295,7 @@ for T in [32, 64, 128, 256]:
             "max_trees":T,
             "step_size":0.5,
             "l_reg":6e-2,
-            "mode":"trained",
+            "mode":"train",
             "init_weight":1.0,
             **shared_cfg
         }
@@ -264,43 +313,11 @@ for T in [32, 64, 128, 256]:
         }
     )
 
-    models.append(
-        {
-            "model":RiverModel,
-            "river_model":river.ensemble.AdaBoostClassifier(
-                model = tree.ExtremelyFastDecisionTreeClassifier(
-                    grace_period=200,
-                    split_confidence=1e-5,
-                    min_samples_reevaluate=100
-                ),
-                n_models = T,
-                seed = shared_cfg["seed"]
-            )
-            **shared_cfg
-        }
-    )
-
-    models.append(
-        {
-            "model":RiverModel,
-            "river_model":river.ensemble.BaggingClassifier(
-                model = tree.ExtremelyFastDecisionTreeClassifier(
-                    grace_period=200,
-                    split_confidence=1e-5,
-                    min_samples_reevaluate=100
-                ),
-                n_models = T,
-                seed = shared_cfg["seed"]
-            )
-            **shared_cfg
-        }
-    )
-
     models.append (
         {
             "model":JaxModel,
             "step_size":1e-1,
-            "n_trees":T
+            "n_trees":T,
             **shared_cfg
         }
     )
@@ -324,7 +341,7 @@ for l in [ 2e-2, 4e-2, 6e-2]:
             "max_trees":0,
             "step_size":0.25,
             "l_reg":l,
-            "mode":"trained",
+            "mode":"train",
             "init_weight":1.0,
             **shared_cfg
         }
@@ -342,5 +359,34 @@ for l in [ 2e-2, 4e-2, 6e-2]:
         }
     )
 
+models.append(
+    {
+        "model":RiverModel,
+        "river_model":tree.ExtremelyFastDecisionTreeClassifier(
+            grace_period=100,
+            split_confidence=1e-5,
+            min_samples_reevaluate=100
+        ),
+        **shared_cfg
+    }
+)
+'''
+
+# models.append(
+#     {
+#         "model":RiverModel,
+#         "river_model":river.ensemble.BaggingClassifier(
+#             model = tree.ExtremelyFastDecisionTreeClassifier(
+#                 grace_period=100,
+#                 split_confidence=1e-5,
+#                 min_samples_reevaluate=100
+#             ),
+#             n_models = T,
+#             seed = shared_cfg["seed"]
+#         ),
+#         **shared_cfg
+#     }
+# )
+random.shuffle(models)
 
 run_experiments(basecfg, models)
