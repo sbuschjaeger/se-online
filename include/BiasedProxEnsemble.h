@@ -101,7 +101,15 @@ public:
         xt::xarray<data_t> losses = loss(output, y_tensor);
         xt::xarray<data_t> losses_deriv = loss_deriv(output, y_tensor);
 
-        xt::xarray<data_t> directions = xt::mean(all_proba * losses_deriv, {1,2});
+        // std::cout << "LOSS: " << losses << std::endl;
+        // std::cout << "LOSS DERIV: " << losses_deriv << std::endl;
+        xt::xarray<data_t> dir_per_tree = all_proba * losses_deriv;
+        // std::cout << "LOSS dir_per_tree: " << dir_per_tree << std::endl;
+        for (unsigned int i = 0; i < _trees.size(); ++i) {
+            _trees[i].next(X, Y, dir_per_tree, w_tensor(i) * step_size, i);
+        }
+        // std::cout << xt::adapt(dir_per_tree.shape()) << std::endl;
+        xt::xarray<data_t> directions = xt::mean(dir_per_tree, {1,2});
         // std::cout << "1: " << w_tensor << std::endl;
         w_tensor = w_tensor - step_size * directions;
         // std::cout << "2: " << w_tensor << std::endl;
@@ -110,6 +118,7 @@ public:
         // std::cout << "3: " << w_tensor << std::endl;
         w_tensor = sign*xt::maximum(w_tensor,0);
         // std::cout << "4: " << w_tensor << std::endl;
+        // std::cout << std::endl;
 
         auto wit = _weights.begin();
         auto tit = _trees.begin();

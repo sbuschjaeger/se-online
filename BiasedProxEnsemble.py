@@ -27,7 +27,7 @@ class BiasedProxEnsemble(OnlineLearner):
                 *args, **kwargs
                 ):
                         
-        assert loss in ["mse","cross-entropy"], "Currently only {mse, cross entropy} loss is supported"
+        assert loss in ["mse","cross-entropy", "exp"], "Currently only {mse, cross entropy, exp} loss is supported"
         assert init_mode in ["random", "train", "fully-random"], "Currently only {random, train, fully-random} init_mode supported"
         assert next_mode in ["incremental", "none", "gradient"], "Currently only {incremental, none, gradient} next_mode supported"
         assert max_depth >= 1, "max_depth should be at-least 1!"
@@ -53,7 +53,7 @@ class BiasedProxEnsemble(OnlineLearner):
         if train:
             lsum = self.model.next(data, target)
             output = self.predict_proba(data)
-            return {"loss": lsum / data.shape[0], "num_trees": self.model.num_trees(), "num_parameters":self.num_parameters()}, output
+            return {"loss": lsum / (data.shape[0] * self.n_classes_), "num_trees": self.model.num_trees(), "num_parameters":self.num_parameters()}, output
         else:
             output = self.predict_proba(data)
             if self.loss == "mse":
@@ -63,6 +63,12 @@ class BiasedProxEnsemble(OnlineLearner):
                 target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
                 p = softmax(output, axis=1)
                 loss = -target_one_hot*np.log(p)
+            elif self.loss == "exp":
+                target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
+                p = softmax(output, axis=1)
+                loss = np.exp(-1.0 / self.n_classes_ * target_one_hot * output)
+            else: 
+                raise "Currently only the three losses {{cross-entropy, exp, mse}} are supported, but you provided: {}".format(self.loss)
             return {"loss": np.mean(loss), "num_trees": self.num_trees(), "num_parameters":self.num_parameters()}, output
 
     def num_trees(self):

@@ -47,8 +47,12 @@ public:
 
         if (loss == "cross-entropy") {
             model = new BiasedProxEnsemble(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight, tree_init, tree_next, cross_entropy, cross_entropy_deriv);
-        } else {
+        } else if (loss  == "exp") {
+            model = new BiasedProxEnsemble(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight, tree_init, tree_next, exponential, exponential_deriv);
+        } else if (loss  == "mse") {
             model = new BiasedProxEnsemble(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight, tree_init, tree_next, mse, mse_deriv);
+        } else {
+            throw std::runtime_error("Currently only the three losses {cross-entropy, exp, mse} are supported, but you provided: " + loss);
         }
     }
 
