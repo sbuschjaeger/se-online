@@ -28,7 +28,8 @@ private:
     data_t step_size;
     data_t lambda;
     data_t const init_weight;
-    TREE_TYPE const tree_type;
+    TREE_INIT const tree_init;
+    TREE_NEXT const tree_next;
 
     std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > loss;
     std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > loss_deriv;
@@ -52,10 +53,11 @@ public:
         data_t step_size,
         data_t lambda,
         data_t init_weight,
-        TREE_TYPE tree_type,
+        TREE_INIT tree_init,
+        TREE_NEXT tree_next,
         std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > loss,
         std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > loss_deriv
-    ) : max_depth(max_depth), max_trees(max_trees), n_classes(n_classes), seed(seed), step_size(step_size), lambda(lambda), init_weight(init_weight), tree_type(tree_type), loss(loss), loss_deriv(loss_deriv) {}
+    ) : max_depth(max_depth), max_trees(max_trees), n_classes(n_classes), seed(seed), step_size(step_size), lambda(lambda), init_weight(init_weight), tree_init(tree_init), tree_next(tree_next), loss(loss), loss_deriv(loss_deriv) {}
 
     data_t next(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
         xt::xarray<unsigned int> y_tensor = xt::xarray<unsigned int>::from_shape({Y.size()});
@@ -67,7 +69,7 @@ public:
             // Create new trees
             _weights.push_back(init_weight);
 
-            _trees.push_back(Tree(tree_type, max_depth, n_classes, seed++, X, Y));
+            _trees.push_back(Tree(tree_init, tree_next, max_depth, n_classes, seed++, X, Y));
         }
 
         xt::xarray<data_t> all_proba = xt::xarray<data_t>::from_shape({_trees.size(), X.size(), n_classes});
@@ -80,17 +82,17 @@ public:
         
         // Compute the ensemble prediction as weighted sum.  
         xt::xarray<data_t> output = xt::mean(all_proba_weighted, 0);
-        auto pred = xt::argmax(output, 1);
+        // auto pred = xt::argmax(output, 1);
         // std::cout << "pred proba:" << output << std::endl;
         // std::cout << "w_tensor:" << w_tensor << std::endl;
         // std::cout << "pred:" << xt::argmax(output, 1) << std::endl;
         // std::cout << "target:" << y_tensor << std::endl;
-        data_t acc = 0;
-        for (unsigned int i = 0; i < y_tensor.shape()[0]; ++i) {
-            if (y_tensor(i) == pred(i)) {
-                acc++;
-            }
-        }
+        // data_t acc = 0;
+        // for (unsigned int i = 0; i < y_tensor.shape()[0]; ++i) {
+        //     if (y_tensor(i) == pred(i)) {
+        //         acc++;
+        //     }
+        // }
 
 
         // WHY DOES THIS NEED LARGE STEPSIZES AROUND 0.1 - 0.5?

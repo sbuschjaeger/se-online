@@ -11,13 +11,14 @@
 
 #include "Datatypes.h"
 
-enum TREE_TYPE {TRAIN, FULLY_RANDOM, RANDOM};
+enum TREE_INIT {TRAIN, FULLY_RANDOM, RANDOM};
+enum TREE_NEXT {GRADIENT, NONE, INCREMENTAL};
 
 class Node {
 public:
     data_t threshold;
     unsigned int feature;
-    std::vector<data_t> preds;
+    std::vector<unsigned int> preds;
 
     Node(data_t threshold, unsigned int feature) : threshold(threshold), feature(feature) {}
     Node() = default;
@@ -30,7 +31,7 @@ private:
     unsigned int n_nodes;
     unsigned int n_classes;
     unsigned long seed;
-    TREE_TYPE tree_type;
+    TREE_NEXT tree_next;
 
     inline unsigned int node_index(std::vector<data_t> const &x) const {
         unsigned int idx = 0;
@@ -268,7 +269,7 @@ private:
 
         nodes.resize(n_nodes);
         for (unsigned int i = 0; i < n_nodes; ++i) {
-            auto feature =  idis(gen);
+            auto feature = idis(gen);
             //std::uniform_real_distribution<> fdis(amin(feature), amax(feature));
             nodes[i].feature = feature;
             nodes[i].threshold = fdis(gen);
@@ -276,6 +277,9 @@ private:
             if (i >= start_leaf) {
                 nodes[i].preds.resize(n_classes);
                 std::fill(nodes[i].preds.begin(), nodes[i].preds.end(), 0);
+                // for (unsigned int j = 0; n_classes; ++j) {
+                //     nodes[i][j] = fdis(gen);
+                // }
             } 
         }
 
@@ -283,18 +287,18 @@ private:
             nodes[node_index(X[i])].preds[Y[i]] += 1;
         }
 
-        for (unsigned int i = start_leaf; i < n_nodes; ++i) {
-            auto & preds = nodes[i].preds;
-            data_t sum = std::accumulate(preds.begin(), preds.end(),data_t(0));
-            if (sum > 0) {
-                std::transform(preds.begin(), preds.end(), preds.begin(), [sum](auto& c){return 1.0/sum*c;});
-            } else {
-                std::fill(preds.begin(), preds.end(), 1.0/n_classes);
-            }
-        }
+        // for (unsigned int i = start_leaf; i < n_nodes; ++i) {
+        //     auto & preds = nodes[i].preds;
+        //     data_t sum = std::accumulate(preds.begin(), preds.end(),data_t(0));
+        //     if (sum > 0) {
+        //         std::transform(preds.begin(), preds.end(), preds.begin(), [sum](auto& c){return 1.0/sum*c;});
+        //     } else {
+        //         std::fill(preds.begin(), preds.end(), 1.0/n_classes);
+        //     }
+        // }
     }
 
-    void trained_nodes(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
+    void trained_nodes(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, TREE_INIT tree_init) {
         // <std::pair<std::vector<std::vector<data_t>>, std::vector<unsigned int>>
         std::queue<
             std::pair<std::vector<std::vector<data_t>>, std::vector<unsigned int>>
@@ -309,7 +313,7 @@ private:
             to_expand.pop();
 
             std::pair<data_t, unsigned int> split;
-            if (tree_type == TRAIN) {
+            if (tree_init == TRAIN) {
                 split = best_split(data.first, data.second, n_classes);
             } else {
                 split = random_split(data.first, data.second, seed);
@@ -356,42 +360,59 @@ private:
                 n.preds[l] += 1;
             }
 
-            if (sum > 0) {
-                std::transform(n.preds.begin(), n.preds.end(), n.preds.begin(), [sum](auto& c){return 1.0/sum*c;});
-            } else {
-                std::fill(n.preds.begin(), n.preds.end(), 1.0/n_classes);
-            }
+            // if (sum > 0) {
+            //     std::transform(n.preds.begin(), n.preds.end(), n.preds.begin(), [sum](auto& c){return 1.0/sum*c;});
+            // } else {
+            //     std::fill(n.preds.begin(), n.preds.end(), 1.0/n_classes);
+            // }
             nodes.push_back(n);
         }
     }
 
 public:
 
-    Tree(TREE_TYPE tree_type, unsigned int max_depth, unsigned int n_classes, unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) : n_classes(n_classes), seed(seed), tree_type(tree_type) {
+    Tree(TREE_INIT tree_init, TREE_NEXT tree_next, unsigned int max_depth, unsigned int n_classes, unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) : n_classes(n_classes), seed(seed), tree_next(tree_next) {
 
         start_leaf = std::pow(2,max_depth) - 1;
         n_nodes = std::pow(2,max_depth + 1) - 1;
 
-        if (tree_type == FULLY_RANDOM) {
+        if (tree_init == FULLY_RANDOM) {
             random_nodes(X, Y);
         } else {
-            trained_nodes(X, Y);
+            trained_nodes(X, Y, tree_init);
+        }
+    }
+
+    /**
+    Update trees:
+        - incremental: update statistics in leaf nodes reached by current batch and improve it this way
+        - gradient: perform gradient step
+    **/
+    data_t next(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, data_t ensemble_loss, data_t step_size) {
+        if (tree_next == GRADIENT) {
+            /* Not implemented yet */
+        } else if (tree_next == INCREMENTAL) {
+            for (unsigned int i = 0; i < X.size(); ++i) {
+                nodes[node_index(X[i])].preds[Y[i]] += 1;
+            }
+        } else {
+            /* Do nothing */
         }
     }
 
     void predict_proba(std::vector<std::vector<data_t>> const &X, xt::xarray<data_t> &place_to_put, int row) {
         for (unsigned int i = 0; i < X.size(); ++i) {
-            std::vector<data_t> const & xpred = nodes[node_index(X[i])].preds;
+            std::vector<unsigned int> const & xpred = nodes[node_index(X[i])].preds;
             for (unsigned int j = 0; j < xpred.size(); ++j) {
                 place_to_put(row, i, j) = xpred[j];
             }
         }
     }
 
-    std::vector<std::vector<data_t>>  predict_proba(std::vector<std::vector<data_t>> const &X) {
-        std::vector<std::vector<data_t>> preds(X.size());
+    std::vector<std::vector<unsigned int>> predict_proba(std::vector<std::vector<data_t>> const &X) {
+        std::vector<std::vector<unsigned int>> preds(X.size());
         for (unsigned int i = 0; i < X.size(); ++i) {
-            std::vector<data_t> const & xpred = nodes[node_index(X[i])].preds;
+            std::vector<unsigned int> const & xpred = nodes[node_index(X[i])].preds;
             preds.push_back(xpred);
         }
         return preds;

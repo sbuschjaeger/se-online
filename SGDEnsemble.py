@@ -61,23 +61,25 @@ class SGDEnsemble(OnlineLearner):
         if train:
             lsum = self.model.next(data, target)
             output = self.predict_proba(data)
-            return {"loss": lsum / data.shape[0], "num_trees": self.model.num_trees(), "num_nodes":self.num_nodes()}, output
+            return {"loss": lsum / data.shape[0], "num_trees": self.model.num_trees(), "num_parameters":self.num_parameters()}, output
         else:
             output = self.predict_proba(data)
             if self.loss == "mse":
-                target_one_hot = np.array( [ [1 if y == i else 0 for i in range(self.n_classes_)] for y in target] )
+                target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
                 loss = (output - target_one_hot) * (output - target_one_hot)
             elif self.loss == "cross-entropy":
-                target_one_hot = np.array( [ [1 if y == i else 0 for i in range(self.n_classes_)] for y in target] )
+                target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
                 p = softmax(output, axis=1)
                 loss = -target_one_hot*np.log(p)
-            return {"loss": np.mean(loss), "num_trees":  self.num_trees(), "num_nodes":self.num_nodes()}, output
+            return {"loss": np.mean(loss), "num_trees":  self.num_trees(), "num_parameters":self.num_parameters()}, output
 
     def num_trees(self):
         return self.model.num_trees()
 
-    def num_nodes(self):
-        return self.model.num_trees() * (2**(self.max_depth + 1) - 1)
+    def num_parameters(self):
+        n_inner = 2**(self.max_depth) - 1
+        n_leafs = 2**(self.max_depth) 
+        return self.model.num_trees() * (2*n_inner + self.n_classes_ * n_leafs)
 
     def fit(self, X, y, sample_weight = None):
         classes_ = unique_labels(y)

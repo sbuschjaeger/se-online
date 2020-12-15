@@ -58,14 +58,8 @@ def pre(cfg):
 
 def fit(cfg, model):
     i = cfg["run_id"]
-    itrain, itest = cfg["idx"][i]
+    itrain, _ = cfg["idx"][i]
     X, Y = cfg["X"],cfg["Y"]
-
-    tree = DecisionTreeClassifier(max_depth = 1)
-    tree.fit(X[itrain], Y[itrain])
-    preds = tree.predict_proba(X[itest])
-
-    print("ACCURACY: ", accuracy_score(Y[itest], preds.argmax(axis=1))*100.0)
 
     model.fit(X[itrain], Y[itrain])
     return model
@@ -104,18 +98,19 @@ def post(cfg, model):
 
     if isinstance(model, (GradientBoostingClassifier, RandomForestClassifier, ExtraTreesClassifier)):
         scores["n_estimators"] = len(model.estimators_)
-        n_nodes = 0
+        n_parameters = 0
         for est in model.estimators_:
+            # TODO Add inner nodes
             if isinstance(model, GradientBoostingClassifier):
                 for ei in est:
-                    n_nodes += ei.tree_.node_count
+                    n_parameters += model.n_classes_ * ei.tree_.node_count
             else:
-                n_nodes += est.tree_.node_count
+                n_parameters += model.n_classes_ * est.tree_.node_count
 
-        scores["n_nodes"] = n_nodes
+        scores["n_parameters"] = n_parameters
     else:
         scores["n_estimators"] = model.num_trees()
-        scores["n_nodes"] = model.num_nodes()
+        scores["n_parameters"] = model.num_parameters()
 
     return scores
 
@@ -180,213 +175,372 @@ else:
 models = []
 
 
-shared_cfg = {
-    "max_depth":1,
-    "loss":"mse",
-    "batch_size":4,
-    "epochs":50,
-    "verbose":True,
-    "eval_every_items":4096,
-    "eval_every_epochs":1,
-    "X":X,
-    "Y":Y,
-    "idx":idx,
-    "repetitions":n_splits,
-    "seed":12345
-}
+ #         models.append(
+    #             {
+    #                 "model":BiasedProxEnsemble,
+    #                 "max_trees":128,
+    #                 "step_size":s,
+    #                 "l_reg":l,
+    #                 "mode":"train",
+    #                 "init_weight":1.0,
+    #                 **shared_cfg
+    #             }
+    #         )
 
 models.append (
     {
-        "model":JaxModel,
-        "step_size":1e-2,
-        "n_trees":1,
-        "temp_scaling":1.0,
-        "temp_start":1.0,
-        "l_reg":0.0,
-        **shared_cfg
+        "model":BiasedProxEnsemble,
+        "step_size":1e-3,
+        "init_mode":"random",
+        "next_mode":"incremental",
+        "l_reg":1e-4,
+        "n_trees":0,
+        "loss":"mse",
+        "max_depth":3,
+        "epochs":50,
+        "verbose":True,
+        "eval_every_items":2048,
+        "eval_every_epochs":1,
+        "X":X,
+        "Y":Y,
+        "idx":idx,
+        "repetitions":n_splits,
+        "seed":12345
     }
 )
 
-'''
-for T in [16, 32, 64]:
-    # Float division by zero?
-    # models.append(
-    #     {
-    #         "model":RiverModel,
-    #         "river_model":river.ensemble.AdaBoostClassifier(
-    #             model = tree.ExtremelyFastDecisionTreeClassifier(
-    #                 grace_period=100,
-    #                 split_confidence=1e-5,
-    #                 min_samples_reevaluate=100
-    #             ),
-    #             n_models = T,
-    #             seed = shared_cfg["seed"]
-    #         ),
-    #         **shared_cfg
-    #     }
-    # )
-
-    models.append(
-        {
-            "model":RandomForestClassifier,
-            "bootstrap":True,
-            "max_samples":shared_cfg["batch_size"],
-            "max_depth":shared_cfg["max_depth"],
-            "loss":shared_cfg["loss"],
-            "n_estimators":T,
-            "verbose":shared_cfg["verbose"],
-            "X":X,
-            "Y":Y,
-            "idx":idx,
-            "repetitions":n_splits,
-            "random_state":shared_cfg["seed"]
-        }
-    )
-
-    models.append(
-        {
-            "model":ExtraTreesClassifier,
-            "bootstrap":True,
-            "max_samples":shared_cfg["batch_size"],
-            "max_depth":shared_cfg["max_depth"],
-            "loss":shared_cfg["loss"],
-            "n_estimators":T,
-            "verbose":shared_cfg["verbose"],
-            "X":X,
-            "Y":Y,
-            "idx":idx,
-            "repetitions":n_splits,
-            "random_state":shared_cfg["seed"]
-        }
-    )
-
-    models.append(
-        {
-            "model":GradientBoostingClassifier,
-            "n_estimators":T,
-            "max_depth":shared_cfg["max_depth"],
-            "loss":"deviance",
-            "eval_loss":shared_cfg["loss"],
-            "subsample":shared_cfg["batch_size"] / min([len(i[0]) for i in idx]),
-            "verbose":shared_cfg["verbose"],
-            "X":X,
-            "Y":Y,
-            "idx":idx,
-            "repetitions":n_splits,
-            "random_state":shared_cfg["seed"]
-        }
-    )
-
-    models.append(
-        {
-            "model":SGDEnsemble,
-            "max_trees":T,
-            "step_size":0.5,
-            "l_reg":6e-2,
-            "mode":"random",
-            "init_weight":1.0,
-            **shared_cfg
-        }
-    )
-
-    models.append(
-        {
-            "model":SGDEnsemble,
-            "max_trees":T,
-            "step_size":0.5,
-            "l_reg":6e-2,
-            "mode":"train",
-            "init_weight":1.0,
-            **shared_cfg
-        }
-    )
-
-    models.append(
-        {
-            "model":SGDEnsemble,
-            "max_trees":T,
-            "step_size":0.5,
-            "l_reg":6e-2,
-            "mode":"fully-random",
-            "init_weight":1.0,
-            **shared_cfg
-        }
-    )
-
-    models.append (
-        {
-            "model":JaxModel,
-            "step_size":1e-1,
-            "n_trees":T,
-            **shared_cfg
-        }
-    )
-
-for l in [ 2e-2, 4e-2, 6e-2]:
-    models.append(
-        {
-            "model":BiasedProxEnsemble,
-            "max_trees":0,
-            "step_size":0.25,
-            "l_reg":l,
-            "mode":"random",
-            "init_weight":1.0,
-            **shared_cfg
-        }
-    )
-
-    models.append(
-        {
-            "model":BiasedProxEnsemble,
-            "max_trees":0,
-            "step_size":0.25,
-            "l_reg":l,
-            "mode":"train",
-            "init_weight":1.0,
-            **shared_cfg
-        }
-    )
-
-    models.append(
-        {
-            "model":BiasedProxEnsemble,
-            "max_trees":0,
-            "step_size":0.25,
-            "l_reg":l,
-            "mode":"fully-random",
-            "init_weight":1.0,
-            **shared_cfg
-        }
-    )
-
-models.append(
-    {
-        "model":RiverModel,
-        "river_model":tree.ExtremelyFastDecisionTreeClassifier(
-            grace_period=100,
-            split_confidence=1e-5,
-            min_samples_reevaluate=100
-        ),
-        **shared_cfg
-    }
-)
-'''
-
-# models.append(
-#     {
-#         "model":RiverModel,
-#         "river_model":river.ensemble.BaggingClassifier(
-#             model = tree.ExtremelyFastDecisionTreeClassifier(
-#                 grace_period=100,
-#                 split_confidence=1e-5,
-#                 min_samples_reevaluate=100
-#             ),
-#             n_models = T,
-#             seed = shared_cfg["seed"]
-#         ),
-#         **shared_cfg
+# for bs, depth in zip([32,128,512,2048], [3,5,7,10]):
+#     shared_cfg = {
+#         "max_depth":depth,
+#         "loss":"mse",
+#         "batch_size":bs,
+#         "epochs":50,
+#         "verbose":False,
+#         "eval_every_items":2048,
+#         "eval_every_epochs":1,
+#         "X":X,
+#         "Y":Y,
+#         "idx":idx,
+#         "repetitions":n_splits,
+#         "seed":12345
 #     }
-# )
+
+    # for s in [1e-3,1e-2,1e-1,2e-1]:
+    #     for l in [1e-2, 2e-2, 3e-2, 4e-2, 4e-2, 6e-2]:
+    #         models.append(
+    #             {
+    #                 "model":BiasedProxEnsemble,
+    #                 "max_trees":0,
+    #                 "step_size":s,
+    #                 "l_reg":l,
+    #                 "mode":"random",
+    #                 "init_weight":1.0,
+    #                 **shared_cfg
+    #             }
+    #         )
+
+    #         models.append(
+    #             {
+    #                 "model":BiasedProxEnsemble,
+    #                 "max_trees":0,
+    #                 "step_size":s,
+    #                 "l_reg":l,
+    #                 "mode":"train",
+    #                 "init_weight":1.0,
+    #                 **shared_cfg
+    #             }
+    #         )
+
+    #         models.append(
+    #             {
+    #                 "model":BiasedProxEnsemble,
+    #                 "max_trees":128,
+    #                 "step_size":s,
+    #                 "l_reg":l,
+    #                 "mode":"random",
+    #                 "init_weight":1.0,
+    #                 **shared_cfg
+    #             }
+    #         )
+
+    #         models.append(
+    #             {
+    #                 "model":BiasedProxEnsemble,
+    #                 "max_trees":128,
+    #                 "step_size":s,
+    #                 "l_reg":l,
+    #                 "mode":"train",
+    #                 "init_weight":1.0,
+    #                 **shared_cfg
+    #             }
+    #         )
+'''
+for bs, depth in zip([32,32,128,512,1024], [1,3,5,7,10]):
+    shared_cfg = {
+        "max_depth":depth,
+        "loss":"mse",
+        "batch_size":bs,
+        "epochs":50,
+        "verbose":False,
+        "eval_every_items":2048,
+        "eval_every_epochs":1,
+        "X":X,
+        "Y":Y,
+        "idx":idx,
+        "repetitions":n_splits,
+        "seed":12345
+    }
+
+    for T in [16, 32, 64]:
+        models.append(
+            {
+                "model":SGDEnsemble,
+                "max_trees":T,
+                "step_size":1e-1,
+                "mode":"random",
+                "init_weight":1.0,
+                **shared_cfg
+            }
+        )
+
+        models.append(
+            {
+                "model":SGDEnsemble,
+                "max_trees":T,
+                "step_size":1e-1,
+                "mode":"train",
+                "init_weight":1.0,
+                **shared_cfg
+            }
+        )
+
+        models.append(
+            {
+                "model":SGDEnsemble,
+                "max_trees":T,
+                "step_size":1e-1,
+                "mode":"fully-random",
+                "init_weight":1.0,
+                **shared_cfg
+            }
+        )
+
+    for l in [1e-2, 2e-2, 3e-2, 4e-2, 4e-2, 6e-2]:
+        models.append(
+            {
+                "model":BiasedProxEnsemble,
+                "max_trees":0,
+                "step_size":0.1,
+                "l_reg":l,
+                "mode":"random",
+                "init_weight":1.0,
+                **shared_cfg
+            }
+        )
+
+        models.append(
+            {
+                "model":BiasedProxEnsemble,
+                "max_trees":0,
+                "step_size":0.1,
+                "l_reg":l,
+                "mode":"train",
+                "init_weight":1.0,
+                **shared_cfg
+            }
+        )
+
+        models.append(
+            {
+                "model":BiasedProxEnsemble,
+                "max_trees":0,
+                "step_size":0.1,
+                "l_reg":l,
+                "mode":"fully-random",
+                "init_weight":1.0,
+                **shared_cfg
+            }
+        )
+
+        models.append(
+            {
+                "model":BiasedProxEnsemble,
+                "max_trees":128,
+                "step_size":0.1,
+                "l_reg":l,
+                "mode":"random",
+                "init_weight":1.0,
+                **shared_cfg
+            }
+        )
+
+        models.append(
+            {
+                "model":BiasedProxEnsemble,
+                "max_trees":128,
+                "step_size":0.1,
+                "l_reg":l,
+                "mode":"train",
+                "init_weight":1.0,
+                **shared_cfg
+            }
+        )
+
+        models.append(
+            {
+                "model":BiasedProxEnsemble,
+                "max_trees":128,
+                "step_size":0.1,
+                "l_reg":l,
+                "mode":"fully-random",
+                "init_weight":1.0,
+                **shared_cfg
+            }
+        )
+
+for bs, depth in zip([32, 32, 128], [1, 3, 5]):
+    shared_cfg = {
+        "max_depth":depth,
+        "loss":"mse",
+        "batch_size":bs,
+        "epochs":50,
+        "verbose":False,
+        "eval_every_items":2048,
+        "eval_every_epochs":1,
+        "X":X,
+        "Y":Y,
+        "idx":idx,
+        "repetitions":n_splits,
+        "seed":12345
+    }
+    for T in [1,2,5]:
+        models.append (
+            {
+                "model":JaxModel,
+                "step_size":1e-1,
+                "n_trees":T,
+                "temp_scaling":1.0,
+                **shared_cfg
+            }
+        )
+
+        models.append (
+            {
+                "model":JaxModel,
+                "step_size":1e-1,
+                "n_trees":T,
+                "temp_scaling":2.0,
+                **shared_cfg
+            }
+        )
+
+for T in [16]:
+    models.append(
+        {
+            "model":RiverModel,
+            "river_model":river.ensemble.SRPClassifier(
+                n_models = T,
+                model = river.tree.ExtremelyFastDecisionTreeClassifier(
+                    grace_period = 300,
+                    split_confidence = 1e-6,
+                    min_samples_reevaluate = 300,
+                    leaf_prediction = "mc"
+                ),
+            ),
+            "loss":"mse",
+            "batch_size":128,
+            "verbose":False,
+            "epochs":50,
+            "eval_every_items":2048,
+            "eval_every_epochs":1,
+            "X":X,
+            "Y":Y,
+            "idx":idx,
+            "repetitions":n_splits,
+            "seed":12345
+        }
+    )
+
+    models.append(
+        {
+            "model":RiverModel,
+            "river_model":river.ensemble.BaggingClassifier(
+                n_models = T,
+                model = river.tree.ExtremelyFastDecisionTreeClassifier(
+                    grace_period = 300,
+                    split_confidence = 1e-6,
+                    min_samples_reevaluate = 300,
+                    leaf_prediction = "mc"
+                ),
+            ),
+            "loss":"mse",
+            "batch_size":128,
+            "verbose":False,
+            "epochs":50,
+            "eval_every_items":2048,
+            "eval_every_epochs":1,
+            "X":X,
+            "Y":Y,
+            "idx":idx,
+            "repetitions":n_splits,
+            "seed":12345
+        }
+    )
+
+for T in [16, 32, 64, 128]:
+    for bs in [32, 128, 512, 1024]:
+        models.append(
+            {
+                "model":RandomForestClassifier,
+                "bootstrap":True,
+                "max_samples":bs,
+                "max_depth":None,
+                "loss":"mse",
+                "n_estimators":T,
+                "verbose":False,
+                "X":X,
+                "Y":Y,
+                "idx":idx,
+                "repetitions":n_splits,
+                "random_state":12345
+            }
+        )
+
+        models.append(
+            {
+                "model":ExtraTreesClassifier,
+                "bootstrap":True,
+                "max_samples":bs,
+                "max_depth":None,
+                "loss":"mse",
+                "n_estimators":T,
+                "verbose":False,
+                "X":X,
+                "Y":Y,
+                "idx":idx,
+                "repetitions":n_splits,
+                "random_state":12345
+            }
+        )
+
+        models.append(
+            {
+                "model":GradientBoostingClassifier,
+                "n_estimators":T,
+                "max_depth":None,
+                "loss":"deviance",
+                "eval_loss":"mse",
+                "subsample":bs / min([len(i[0]) for i in idx]),
+                "verbose":False,
+                "X":X,
+                "Y":Y,
+                "idx":idx,
+                "repetitions":n_splits,
+                "random_state":12345
+            }
+        )
+'''
+
 random.shuffle(models)
 
 run_experiments(basecfg, models)

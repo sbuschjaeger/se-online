@@ -29,9 +29,10 @@ class RiverModel(OnlineLearner):
             data["att_" + str(j)] = xj
 
         output = self.model.predict_proba_one(data)
-        pred = np.array([0 for _ in range(self.n_classes_)])
+        pred = np.zeros(self.n_classes_)
         for key, val in output.items():
             pred[key] = val
+        
         return pred
 
     def predict_proba(self, X):
@@ -49,14 +50,16 @@ class RiverModel(OnlineLearner):
         else:
             return 1
 
-    def num_nodes(self):
+    def num_parameters(self):
         n_nodes = 0
         if hasattr(self.model, "models"):
             for m in self.model.models:
-                #n_nodes += m.model._n_decision_nodes + m.model._n_active_leaves
-                n_nodes += m._n_decision_nodes + m._n_active_leaves
+                if hasattr(m, "model"):
+                    n_nodes += 2 * m.model._n_decision_nodes + self.n_classes_ * m.model._n_active_leaves + (self.n_classes_ + 1) * m.model._n_inactive_leaves
+                else:
+                    n_nodes += 2 * m._n_decision_nodes + self.n_classes_ * m._n_active_leaves + (self.n_classes_ + 1) * m._n_inactive_leaves
         else:
-            n_nodes = self.model._n_decision_nodes + self.model._n_active_leaves
+            n_nodes = 2 * self.model._n_decision_nodes + self.n_classes_ * self.model._n_active_leaves + (self.n_classes_ + 1) * m.model._n_inactive_leaves
         return n_nodes
 
     def next(self, data, target, train = False, new_epoch = False):
@@ -72,14 +75,14 @@ class RiverModel(OnlineLearner):
             pred = self.predict_proba_one(x)
             
             if self.loss == "mse":
-                target_one_hot = np.array( [1 if y == i else 0 for i in range(self.n_classes_)] )
+                target_one_hot = np.array( [1.0 if y == i else 0.0 for i in range(self.n_classes_)] )
                 loss = (pred - target_one_hot) * (pred - target_one_hot)
             elif self.loss == "cross-entropy":
-                target_one_hot = np.array( [1 if y == i else 0 for i in range(self.n_classes_)] )
+                target_one_hot = np.array( [1.0 if y == i else 0.0 for i in range(self.n_classes_)] )
                 p = softmax(pred)
                 loss = -target_one_hot*np.log(p)
             
             losses.append(loss)
             output.append(pred)
         
-        return {"loss": np.mean(loss), "num_trees": self.num_trees(), "num_nodes":self.num_nodes()}, np.array(output)
+        return {"loss": np.mean(loss), "num_trees": self.num_trees(), "num_parameters":self.num_parameters()}, np.array(output)

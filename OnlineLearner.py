@@ -2,6 +2,7 @@ import numpy as np
 import random
 from tqdm import tqdm
 import json
+import time
 
 import jax
 from jax import grad
@@ -75,7 +76,7 @@ class OnlineLearner(ABC):
         test_accuracy = 0
         test_loss = 0
         test_n_trees = 0
-        test_n_nodes = 0
+        test_n_parameters = 0
         
         test_cnt = 0
         for batch in test_batches: 
@@ -84,10 +85,10 @@ class OnlineLearner(ABC):
 
             test_loss += metrics["loss"]
             test_n_trees += metrics["num_trees"] 
-            test_n_nodes += metrics["num_nodes"] 
+            test_n_parameters += metrics["num_parameters"] 
             test_accuracy += accuracy_score(target, output.argmax(axis=1))*100.0
             test_cnt += 1
-        return {"test_loss":test_loss / test_cnt, "test_num_trees":test_n_trees / test_cnt, "test_accuracy": test_accuracy / test_cnt, "test_num_nodes" : test_n_nodes / test_cnt}
+        return {"loss":test_loss / test_cnt, "num_trees":test_n_trees / test_cnt, "accuracy": test_accuracy / test_cnt, "num_parameters" : test_n_parameters / test_cnt}
 
     def fit(self, X, y, sample_weight = None):
         self.X_ = X
@@ -110,19 +111,24 @@ class OnlineLearner(ABC):
             batch_cnt = 0
             avg_accuarcy = 0
             n_trees = 0
-            n_nodes = 0
+            n_params = 0
             last_stored = 0
+            epoch_time = 0
 
+            first_batch = epoch > 0 
             with tqdm(total=X.shape[0], ncols=135, disable = not self.verbose) as pbar:
-                first_batch = True
                 for batch in mini_batches: 
                     data, target = batch 
+
+                    start_time = time.time()
                     metrics, output = self.next(data, target, train = True, new_epoch = first_batch)
+                    batch_time = time.time() - start_time
+                    epoch_time += 1000 * batch_time / data.shape[0]
                     first_batch = False
 
                     epoch_loss += metrics["loss"]
                     n_trees += metrics["num_trees"] 
-                    n_nodes += metrics["num_nodes"] 
+                    n_params += metrics["num_parameters"] 
 
                     accuracy = accuracy_score(target, output.argmax(axis=1))*100.0
                     avg_accuarcy += accuracy
@@ -131,18 +137,27 @@ class OnlineLearner(ABC):
                     last_stored += data.shape[0]
 
                     pbar.update(data.shape[0])
-                    desc = '[{}/{}] loss {:2.4f} acc {:2.4f} n_trees {:2.4f} n_nodes {:2.4f}'.format(
+                    desc = '[{}/{}] loss {:2.4f} acc {:2.4f} n_trees {:2.4f} n_params {:2.4f} time_item {:2.4f}'.format(
                         epoch, 
                         epochs-1, 
                         epoch_loss/batch_cnt, 
                         avg_accuarcy/batch_cnt,
                         n_trees/batch_cnt,
-                        n_nodes/batch_cnt
+                        n_params/batch_cnt,
+                        epoch_time / batch_cnt
                     )
                     pbar.set_description(desc)
 
                     if all(v is not None for v in [self.x_test, self.y_test, self.eval_every_items]) and self.eval_every_items > 0 and last_stored > self.eval_every_items:
-                        out_dict = self.eval(self.x_test, self.y_test)
+                        tmp_dict = self.eval(self.x_test, self.y_test)
+                        out_dict = {}
+                        for key, val in tmp_dict.items():
+                            out_dict["test_" + key] = val
+                        out_dict["train_loss"] = epoch_loss/batch_cnt
+                        out_dict["train_accuracy"] = avg_accuarcy/batch_cnt
+                        out_dict["train_num_trees"] = n_trees/batch_cnt
+                        out_dict["train_num_parameters"] = n_params/batch_cnt
+                        out_dict["item_time"] = epoch_time / batch_cnt
                         out_dict["total_item_cnt"] = total_item_cnt
                         out_dict["epoch"] = epoch
                         out_str = json.dumps(out_dict)
@@ -150,19 +165,28 @@ class OnlineLearner(ABC):
                         last_stored = 0
 
                 if all(v is not None for v in [self.x_test, self.y_test, self.eval_every_items]) and self.eval_every_epochs > 0 and epoch % self.eval_every_epochs == 0:
-                    out_dict = self.eval(self.x_test, self.y_test)
+                    tmp_dict = self.eval(self.x_test, self.y_test)
+                    out_dict = {}
+                    for key, val in tmp_dict.items():
+                        out_dict["test_" + key] = val
+                    out_dict["train_loss"] = epoch_loss/batch_cnt
+                    out_dict["train_accuracy"] = avg_accuarcy/batch_cnt
+                    out_dict["train_num_trees"] = n_trees/batch_cnt
+                    out_dict["train_num_parameters"] = n_params/batch_cnt
+                    out_dict["item_time"] = epoch_time / batch_cnt
                     out_dict["total_item_cnt"] = total_item_cnt
                     out_dict["epoch"] = epoch
                     out_str = json.dumps(out_dict)
                     fout.write(out_str + "\n")
 
-                    desc = '[{}/{}] loss {:2.4f} acc {:2.4f} n_trees {:2.4f} n_nodes {:2.4f} test-acc {:2.4f}'.format(
+                    desc = '[{}/{}] loss {:2.4f} acc {:2.4f} n_trees {:2.4f} n_params {:2.4f} time_item {:2.4f} test-acc {:2.4f}'.format(
                         epoch, 
                         epochs-1, 
                         epoch_loss/batch_cnt, 
                         avg_accuarcy/batch_cnt,
                         n_trees/batch_cnt,
-                        n_nodes/batch_cnt,
+                        n_params/batch_cnt,
+                        epoch_time / batch_cnt,
                         out_dict["test_accuracy"]
                     )
                     pbar.set_description(desc)
