@@ -8,7 +8,7 @@
 
 class BiasedProxEnsembleAdaptor {
 private:
-    BiasedProxedEnsembleInterface * model = nullptr;
+    BiasedProxedEnsembleInterface<data_t> * model = nullptr;
 
 public:
     BiasedProxEnsembleAdaptor(
@@ -29,9 +29,6 @@ public:
         if (loss == "cross-entropy") {
             _loss = cross_entropy;
             _loss_deriv = cross_entropy_deriv;
-        } else if (loss  == "exp") {
-            _loss = exponential;
-            _loss_deriv = exponential_deriv;
         } else if (loss  == "mse") {
             _loss = mse;
             _loss_deriv = mse_deriv;
@@ -42,23 +39,23 @@ public:
         // Yeha this is ugly and there is probably clever way to do this with C++17/20, but this was quicker to code and it gets the job done.
         // Also, lets be real here: There is only a limited chance more init/next modes are added without much refactoring of the whole project
         if (init_mode == "random" && next_mode == "incremental") {
-            model = new BiasedProxEnsemble<TREE_INIT::RANDOM, TREE_NEXT::INCREMENTAL>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
+            model = new BiasedProxEnsemble<TREE_INIT::RANDOM, TREE_NEXT::INCREMENTAL, data_t>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
         } else if (init_mode == "random" && next_mode == "gradient") {
-            model = new BiasedProxEnsemble<TREE_INIT::RANDOM, TREE_NEXT::GRADIENT>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
+            model = new BiasedProxEnsemble<TREE_INIT::RANDOM, TREE_NEXT::GRADIENT, data_t>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
         } else if (init_mode == "random" && next_mode == "none") {
-            model = new BiasedProxEnsemble<TREE_INIT::RANDOM, TREE_NEXT::NONE>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
+            model = new BiasedProxEnsemble<TREE_INIT::RANDOM, TREE_NEXT::NONE, data_t>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
         } else if (init_mode == "fully-random" && next_mode == "incremental") {
-            model = new BiasedProxEnsemble<TREE_INIT::FULLY_RANDOM, TREE_NEXT::INCREMENTAL>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
+            model = new BiasedProxEnsemble<TREE_INIT::FULLY_RANDOM, TREE_NEXT::INCREMENTAL, data_t>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
         } else if (init_mode == "fully-random" && next_mode == "gradient") {
-            model = new BiasedProxEnsemble<TREE_INIT::FULLY_RANDOM, TREE_NEXT::GRADIENT>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
+            model = new BiasedProxEnsemble<TREE_INIT::FULLY_RANDOM, TREE_NEXT::GRADIENT, data_t>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
         } else if (init_mode == "fully-random" && next_mode == "none") {
-            model = new BiasedProxEnsemble<TREE_INIT::FULLY_RANDOM, TREE_NEXT::NONE>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
+            model = new BiasedProxEnsemble<TREE_INIT::FULLY_RANDOM, TREE_NEXT::NONE, data_t>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
         } else if (init_mode == "train" && next_mode == "incremental") {
-            model = new BiasedProxEnsemble<TREE_INIT::TRAIN, TREE_NEXT::INCREMENTAL>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
+            model = new BiasedProxEnsemble<TREE_INIT::TRAIN, TREE_NEXT::INCREMENTAL, data_t>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
         } else if (init_mode == "train" && next_mode == "gradient") {
-            model = new BiasedProxEnsemble<TREE_INIT::TRAIN, TREE_NEXT::GRADIENT>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
+            model = new BiasedProxEnsemble<TREE_INIT::TRAIN, TREE_NEXT::GRADIENT, data_t>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
         } else if (init_mode == "train" && next_mode == "none") {
-            model = new BiasedProxEnsemble<TREE_INIT::TRAIN, TREE_NEXT::NONE>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
+            model = new BiasedProxEnsemble<TREE_INIT::TRAIN, TREE_NEXT::NONE, data_t>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
         } else {
             throw std::runtime_error("Currently only the three init_modes {random, fully-random, train} and the three next_modes {incremental, none, gradient} are supported for trees, but you provided a combination of " + init_mode + " and " + next_mode);
         }

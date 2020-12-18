@@ -20,6 +20,7 @@
  * @note   
  * @retval None
  */
+template <typename pred_t>
 class BiasedProxedEnsembleInterface {
 public:
     virtual data_t next(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) = 0;
@@ -33,11 +34,11 @@ public:
     virtual ~BiasedProxedEnsembleInterface() { }
 };
 
-template <TREE_INIT tree_init, TREE_NEXT tree_next>
-class BiasedProxEnsemble : public BiasedProxedEnsembleInterface {
+template <TREE_INIT tree_init, TREE_NEXT tree_next, typename pred_t>
+class BiasedProxEnsemble : public BiasedProxedEnsembleInterface<pred_t> {
 
 private:
-    std::vector< Tree<tree_init, tree_next> > _trees;
+    std::vector< Tree<tree_init, tree_next, pred_t> > _trees;
     std::vector<data_t> _weights;
 
     unsigned int max_depth;
@@ -47,8 +48,6 @@ private:
     data_t step_size;
     data_t lambda;
     data_t const init_weight;
-    // TREE_INIT const tree_init;
-    // TREE_NEXT const tree_next;
 
     std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > loss;
     std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > loss_deriv;
@@ -63,11 +62,9 @@ public:
         data_t step_size,
         data_t lambda,
         data_t init_weight,
-        // TREE_INIT tree_init,
-        // TREE_NEXT tree_next,
         std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > loss,
         std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > loss_deriv
-    ) : max_depth(max_depth), max_trees(max_trees), n_classes(n_classes), seed(seed), step_size(step_size), lambda(lambda), init_weight(init_weight), /* tree_init(tree_init), tree_next(tree_next),*/ loss(loss), loss_deriv(loss_deriv) {}
+    ) : max_depth(max_depth), max_trees(max_trees), n_classes(n_classes), seed(seed), step_size(step_size), lambda(lambda), init_weight(init_weight), loss(loss), loss_deriv(loss_deriv) {}
 
     data_t next(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
         xt::xarray<unsigned int> y_tensor = xt::xarray<unsigned int>::from_shape({Y.size()});
@@ -78,7 +75,7 @@ public:
         if (max_trees == 0 || _trees.size() < max_trees) {
             // Create new trees
             _weights.push_back(init_weight);
-            _trees.push_back(Tree<tree_init, tree_next>(max_depth, n_classes, seed++, X, Y));
+            _trees.push_back(Tree<tree_init, tree_next, pred_t>(max_depth, n_classes, seed++, X, Y));
         }
 
         xt::xarray<data_t> all_proba = xt::xarray<data_t>::from_shape({_trees.size(), X.size(), n_classes});
@@ -92,8 +89,6 @@ public:
         xt::xarray<data_t> output = xt::mean(all_proba_weighted, 0);
         xt::xarray<data_t> losses = loss(output, y_tensor);
         xt::xarray<data_t> losses_deriv = loss_deriv(output, y_tensor);
-        std::cout << losses << std::endl;
-        std::cout << losses_deriv << std::endl;
 
         xt::xarray<data_t> dir_per_tree = all_proba * losses_deriv;
         for (unsigned int i = 0; i < _trees.size(); ++i) {

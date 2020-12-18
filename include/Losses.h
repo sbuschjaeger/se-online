@@ -16,16 +16,28 @@
 
 #include "Datatypes.h"
 
+/**
+ * @brief  The softmax function which maps the input tensor to probabilities. The shape is assumed to be (batch_size, n_classes). Softmax is applied for each row of the input matrix.
+ * @note   
+ * @param  &X: Inputmatrix over which softmax will be applied. Assumed to have shape (batch_size, n_classes) 
+ * @retval A new matrix with shape (batch_size, n_classes) where softmax has been applied to every row.
+ */
 xt::xarray<data_t> softmax(xt::xarray<data_t> const &X) {
     xt::xarray<data_t> tmp = xt::xarray<data_t>(X);
     int batch_size = tmp.shape()[0];
     tmp = xt::exp(tmp - xt::reshape_view(xt::amax(tmp, 1), { batch_size, 1 }));
-    return tmp / xt::reshape_view(xt::sum(tmp, 1), { batch_size, 1 }); //xt::sum(tmp, 1);
+    return tmp / xt::reshape_view(xt::sum(tmp, 1), { batch_size, 1 }); 
 }
 
-xt::xarray<data_t> cross_entropy(xt::xarray<data_t> const &pred, xt::xarray<data_t> const &target){
-    //TODO Assert shape
-    xt::xarray<data_t> p = softmax(pred); //#, axis=1)
+/**
+ * @brief  Computes the cross entropy loss, which is the negative log-liklihood combined with the softmax function. The prediction tensor is assumed to have a shape of (batch_size, n_classes), whereas the target vector is assumed to be a vector of shape (batch_size) in which each entry represents the corresponding class.
+ * @note   
+ * @param  &pred: The per-class prediction tensor for each sample. This tensor is assumed to have a shape of (batch_size, n_classes)
+ * @param  &target: The per-sample target which is assumed to be from {0,\dots,n_classes - 1}. This tensor is assumed to have a shape of (batch_size)
+ * @retval The cross-entropy for each class and each sample. The return tensor has a shape of (batch_size, n_classes). 
+ */
+xt::xarray<data_t> cross_entropy(xt::xarray<data_t> const &pred, xt::xarray<unsigned int> const &target){
+    xt::xarray<data_t> p = softmax(pred); 
 
     xt::xarray<data_t> target_one_hot = xt::xarray<data_t>::from_shape(pred.shape());
     for (unsigned int i = 0; i < pred.shape()[0]; ++i) {
@@ -41,8 +53,14 @@ xt::xarray<data_t> cross_entropy(xt::xarray<data_t> const &pred, xt::xarray<data
     return -target_one_hot*xt::log(p);
 }
 
-xt::xarray<data_t> cross_entropy_deriv(xt::xarray<data_t> const &pred, xt::xarray<data_t> const &target){
-    //TODO Assert shape
+/**
+ * @brief  The first derivation of the cross entropy loss. The prediction tensor is assumed to have a shape of (batch_size, n_classes), whereas the target vector is assumed to be a vector of shape (batch_size) in which each entry represents the corresponding class.
+ * @note   
+ * @param  &pred: The per-class prediction tensor for each sample. This tensor is assumed to have a shape of (batch_size, n_classes)
+ * @param  &target: The per-sample target which is assumed to be from {0,\dots,n_classes - 1}. This tensor is assumed to have a shape of (batch_size)
+ * @retval The first derivation of the cross-entropy for each class and each sample. The return tensor has a shape of (batch_size, n_classes). 
+ */
+xt::xarray<data_t> cross_entropy_deriv(xt::xarray<data_t> const &pred, xt::xarray<unsigned int> const &target){
     xt::xarray<data_t> grad = softmax(pred);
 
     for (unsigned int i = 0; i < pred.shape()[0]; ++i) {
@@ -52,92 +70,16 @@ xt::xarray<data_t> cross_entropy_deriv(xt::xarray<data_t> const &pred, xt::xarra
     return grad;
 }
 
-xt::xarray<data_t> sebastian(xt::xarray<data_t> const &pred, xt::xarray<data_t> const &target){
-    xt::xarray<data_t> losses = xt::xarray<data_t>::from_shape(pred.shape());
-
-    for (unsigned int i = 0; i < pred.shape()[0]; ++i) {
-        unsigned int ipred = xt::argmax(pred, 1)();
-        data_t pi = pred(i, ipred);
-
-        for (unsigned int j = 0; j < pred.shape()[1]; ++j) {
-            if (target(i) != ipred) {
-                losses(i,j) = std::max(0, pi - pred(i,j));
-            } else {
-                losses(i,j) = 0;
-            }
-        }
-    }
-    return losses;
-}
-
-xt::xarray<data_t> sebastian_deriv(xt::xarray<data_t> const &pred, xt::xarray<data_t> const &target){
-    // TODO
-    xt::xarray<data_t> losses = xt::xarray<data_t>::from_shape(pred.shape());
-
-    for (unsigned int i = 0; i < pred.shape()[0]; ++i) {
-        unsigned int ipred = xt::argmax(pred, 1)();
-        data_t pi = pred(i, ipred);
-
-        for (unsigned int j = 0; j < pred.shape()[1]; ++j) {
-            if (target(i) != ipred) {
-                losses(i,j) = std::max(0, pi - pred(i,j));
-            } else {
-                losses(i,j) = 0;
-            }
-        }
-    }
-    return losses;
-}
-
-xt::xarray<data_t> exponential(xt::xarray<data_t> const &pred, xt::xarray<data_t> const &target){
-    //TODO Assert shape
+/**
+ * @brief  Computes the mse loss. Contrary to common implementations of the mse this version first scales the input to probabilities using the softmax!
+ * @note   This is not the regular MSE loss, but it maps the prediction to probabilities beforehand using softmax!
+ * @param  &pred: The per-class prediction tensor for each sample. This tensor is assumed to have a shape of (batch_size, n_classes)
+ * @param  &target: The per-sample target which is assumed to be from {0,\dots,n_classes - 1}. This tensor is assumed to have a shape of (batch_size)
+ * @retval The mse loss for each class and each sample. The return tensor has a shape of (batch_size, n_classes). 
+ */
+xt::xarray<data_t> mse(xt::xarray<data_t> const &pred, xt::xarray<unsigned int> const &target){
+    xt::xarray<data_t> p = softmax(pred);
     xt::xarray<data_t> target_one_hot = xt::xarray<data_t>::from_shape(pred.shape());
-
-    for (unsigned int i = 0; i < pred.shape()[0]; ++i) {
-        for (unsigned int j = 0; j < pred.shape()[1]; ++j) {
-            if (target(i) == j) {
-                target_one_hot(i,j) = 1;
-            } else {
-                target_one_hot(i,j) = -1;
-            }
-        }
-    }
-
-    data_t n_classes = pred.shape()[1];
-    return xt::exp(-1.0 / n_classes * pred * target_one_hot);
-}
-
-xt::xarray<data_t> exponential_deriv(xt::xarray<data_t> const &pred, xt::xarray<data_t> const &target){
-    //TODO Assert shape
-    xt::xarray<data_t> target_one_hot = xt::xarray<data_t>::from_shape(pred.shape());
-
-    for (unsigned int i = 0; i < pred.shape()[0]; ++i) {
-        for (unsigned int j = 0; j < pred.shape()[1]; ++j) {
-            if (target(i) == j) {
-                target_one_hot(i,j) = 1;
-            } else {
-                target_one_hot(i,j) = -1;
-            }
-        }
-    }
-
-    data_t n_classes = pred.shape()[1];
-    return -1.0 / n_classes * xt::exp(-1.0 / n_classes * pred * target_one_hot);
-}
-
-xt::xarray<data_t> mse(xt::xarray<data_t> const &pred, xt::xarray<data_t> const &target){
-    //TODO Assert shape
-    xt::xarray<data_t> target_one_hot = xt::xarray<data_t>::from_shape(pred.shape());
-    // xt::xarray<data_t> scaled_pred = xt::xarray<data_t>::from_shape(pred.shape());
-    // xt::xarray<data_t> sums = xt::sum(pred, 1);
-
-    // std:: cout << "sums: ";
-    // for (unsigned int i = 0; i < sums.shape()[0]; ++i) {
-    //     std:: cout << sums(i) << " ";
-    // }
-    // std::cout << std::endl;
-    // std::cout << "PRED: " << pred << std::endl;
-    // std::cout << "SUMS: " << sums << std::endl;
 
     for (unsigned int i = 0; i < pred.shape()[0]; ++i) {
         for (unsigned int j = 0; j < pred.shape()[1]; ++j) {
@@ -146,28 +88,22 @@ xt::xarray<data_t> mse(xt::xarray<data_t> const &pred, xt::xarray<data_t> const 
             } else {
                 target_one_hot(i,j) = 0;
             }
-            // if (sums(i) > 0){
-            //     scaled_pred(i,j) = pred(i,j) / sums(i); 
-            // } else {
-            //     scaled_pred(i,j) = pred(i,j);
-            // }
         }
     }
 
-    // std:: cout << "scaled_pred: ";
-    // for (unsigned int i = 0; i < sums.shape()[0]; ++i) {
-    //     std:: cout << scaled_pred(i, 0) << " ";
-    // }
-    // std::cout << std::endl;
-    // return (scaled_pred-target_one_hot)*(scaled_pred-target_one_hot);
-    return (pred-target_one_hot)*(pred-target_one_hot);
+    return (p-target_one_hot)*(p-target_one_hot);
 }
 
+/**
+ * @brief  Computes the first derivative of the mse loss. Contrary to common implementations of the mse, this version first scales the input to probabilities using the softmax!
+ * @note   This is not the regular MSE loss, but it maps the prediction to probabilities beforehand using softmax!
+ * @param  &pred: The per-class prediction tensor for each sample. This tensor is assumed to have a shape of (batch_size, n_classes)
+ * @param  &target: The per-sample target which is assumed to be from {0,\dots,n_classes - 1}. This tensor is assumed to have a shape of (batch_size)
+ * @retval The first derivative of the mse loss for each class and each sample. The return tensor has a shape of (batch_size, n_classes). 
+ */
 xt::xarray<data_t> mse_deriv(xt::xarray<data_t> const &pred, xt::xarray<data_t> const &target){
-    //TODO Assert shape
+    xt::xarray<data_t> p = softmax(pred);
     xt::xarray<data_t> target_one_hot = xt::xarray<data_t>::from_shape(pred.shape());
-    xt::xarray<data_t> scaled_pred = xt::xarray<data_t>::from_shape(pred.shape());
-    xt::xarray<data_t> sums = xt::sum(pred, 1);
 
     for (unsigned int i = 0; i < pred.shape()[0]; ++i) {
         for (unsigned int j = 0; j < pred.shape()[1]; ++j) {
@@ -176,28 +112,10 @@ xt::xarray<data_t> mse_deriv(xt::xarray<data_t> const &pred, xt::xarray<data_t> 
             } else {
                 target_one_hot(i,j) = 0;
             }
-            // if (sums(i) > 0){
-            //     scaled_pred(i,j) = pred(i,j) / sums(i); 
-            // } else {
-            //     scaled_pred(i,j) = pred(i,j);
-            // }
         }
     }
 
-    // return 2 * (scaled_pred - target_one_hot) ;
-    return 2 * (pred - target_one_hot) ;
+    return 2 * (pred - target_one_hot) * p * (1.0 - p) ;
 }
-
-// auto cross_entropy(xt::xarray<data_t> const &pred, xt::xarray<data_t> const &targets) {
-//     auto p = softmax(pred);
-//     for (unsigned int i = 0; i < p.size(); ++i) {
-//         if (i != target) {
-//             p[i] = 0;
-//         } else {
-//             p[i] = -std::log(p[i]);
-//         }
-//     }
-//     return p;
-// }
 
 #endif

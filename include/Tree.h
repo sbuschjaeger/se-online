@@ -15,7 +15,7 @@
 enum TREE_INIT {TRAIN, FULLY_RANDOM, RANDOM};
 enum TREE_NEXT {GRADIENT, NONE, INCREMENTAL};
 
-template <typname data_t, typename pred_t>
+template <typename pred_t>
 class Node {
 public:
     data_t threshold;
@@ -26,10 +26,10 @@ public:
     Node() = default;
 };
 
-template <TREE_INIT tree_init, TREE_NEXT tree_next, typename data_t, typename pred_t>
+template <TREE_INIT tree_init, TREE_NEXT tree_next, typename pred_t>
 class Tree {
 private:
-    std::vector<Node<data_t, pred_t>> nodes;
+    std::vector<Node<pred_t>> nodes;
     unsigned int start_leaf;
     unsigned int n_nodes;
     unsigned int n_classes;
@@ -53,7 +53,7 @@ private:
      * @brief  Compute the weighted gini score for the given split. Weighted means here, that we weight the individual gini scores of left and right with the proportion of data in each child node. This leads to slightly more balanced splits.
      * @note   
      * @param  &left: Class-counts for the left child
-     * @param  &right: Class-couts for the right child.
+     * @param  &right: Class-counts for the right child.
      * @retval The weighted gini score.
      */
     static data_t gini(std::vector<unsigned int> const &left, std::vector<unsigned int> const &right) {
@@ -288,33 +288,12 @@ private:
         for (unsigned int i = 0; i < X.size(); ++i) {
             auto idx = node_index(X[i]);
             nodes[idx].preds[Y[i]] += 1;
-            nodes[idx].total_cnt += 1;
         }
-
-        for (unsigned int i = start_leaf; i < n_nodes; ++i) {
-            auto & preds = nodes[i].preds;
-            auto sum = nodes[i].total_cnt;
-            if (nodes[i].total_cnt > 0) {
-                std::transform(preds.begin(), preds.end(), preds.begin(), [sum](auto& c){return 1.0/sum*c;});
-            } 
-        }
-
-        // for (unsigned int i = start_leaf; i < n_nodes; ++i) {
-        //     auto & preds = nodes[i].preds;
-        //     data_t sum = std::accumulate(preds.begin(), preds.end(),data_t(0));
-        //     if (sum > 0) {
-        //         std::transform(preds.begin(), preds.end(), preds.begin(), [sum](auto& c){return 1.0/sum*c;});
-        //     } else {
-        //         std::fill(preds.begin(), preds.end(), 1.0/n_classes);
-        //     }
-        // }
     }
 
     void trained_nodes(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
         // <std::pair<std::vector<std::vector<data_t>>, std::vector<unsigned int>>
-        std::queue<
-            std::pair<std::vector<std::vector<data_t>>, std::vector<unsigned int>>
-        > to_expand; 
+        std::queue<std::pair<std::vector<std::vector<data_t>>, std::vector<unsigned int>>> to_expand; 
         to_expand.push(std::make_pair(X, Y));
 
         // auto split = best_split(n_classes, XVec, YVec);
@@ -337,7 +316,7 @@ private:
             // and that each path in the tree has max_depth length. Now it might happen that XLeft / XRight is empty. 
             // In this best_split return t = 1, which means that _all_ data points are routed towards XLeft
             // and we keep on adding nodes as long as required to built the complete tree
-            nodes.push_back(Node(t, f));
+            nodes.push_back(Node<pred_t>(t, f));
             
             std::vector<std::vector<data_t>> XLeft, XRight;
             std::vector<unsigned int> YLeft, YRight;
@@ -358,25 +337,14 @@ private:
         while(to_expand.size() > 0) {
             auto data = to_expand.front();
             to_expand.pop();
-            Node n;
+            Node<pred_t> n;
             n.preds.resize(n_classes);
             std::fill(n.preds.begin(), n.preds.end(), 0);
 
-            data_t sum = data.second.size();
-            n.total_cnt = sum;
             for (auto const l : data.second) {
                 n.preds[l] += 1;
             }
 
-            if (sum > 0) {
-                std::transform(n.preds.begin(), n.preds.end(), n.preds.begin(), [sum](auto& c){return 1.0/sum*c;});
-            }
-
-            // if (sum > 0) {
-            //     std::transform(n.preds.begin(), n.preds.end(), n.preds.begin(), [sum](auto& c){return 1.0/sum*c;});
-            // } else {
-            //     std::fill(n.preds.begin(), n.preds.end(), 1.0/n_classes);
-            // }
             nodes.push_back(n);
         }
     }
@@ -407,15 +375,7 @@ public:
         } else if constexpr (tree_next == INCREMENTAL) {
             for (unsigned int i = 0; i < X.size(); ++i) {
                 auto idx = node_index(X[i]);
-                auto sum = nodes[idx].total_cnt;
-                for (unsigned int j = 0; j < n_classes; ++j) {
-                    if (j == Y[i]) {
-                        nodes[idx].preds[j] = (sum * nodes[idx].preds[j] + 1) / (sum + 1);
-                    } else {
-                        nodes[idx].preds[j] = (sum * nodes[idx].preds[j]) / (sum + 1);
-                    }
-                }
-                nodes[idx].total_cnt += 1;
+                nodes[idx].preds[Y[i]]++;
             }
         } else {
             /* Do nothing */
@@ -431,14 +391,14 @@ public:
         }
     }
 
-    std::vector<std::vector<data_t>> predict_proba(std::vector<std::vector<data_t>> const &X) {
-        std::vector<std::vector<data_t>> preds(X.size());
-        for (unsigned int i = 0; i < X.size(); ++i) {
-            std::vector<data_t> const & xpred = nodes[node_index(X[i])].preds;
-            preds.push_back(xpred);
-        }
-        return preds;
-    }
+    // std::vector<std::vector<data_t>> predict_proba(std::vector<std::vector<data_t>> const &X) {
+    //     std::vector<std::vector<data_t>> preds(X.size());
+    //     for (unsigned int i = 0; i < X.size(); ++i) {
+    //         std::vector<data_t> const & xpred = nodes[node_index(X[i])].preds;
+    //         preds.push_back(xpred);
+    //     }
+    //     return preds;
+    // }
 };
 
 #endif
