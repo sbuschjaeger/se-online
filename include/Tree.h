@@ -6,6 +6,7 @@
 #include <random>
 #include <algorithm>
 #include <queue>
+#include <string_view>
 
 #include "xtensor/xarray.hpp"
 
@@ -14,25 +15,25 @@
 enum TREE_INIT {TRAIN, FULLY_RANDOM, RANDOM};
 enum TREE_NEXT {GRADIENT, NONE, INCREMENTAL};
 
+template <typname data_t, typename pred_t>
 class Node {
 public:
     data_t threshold;
     unsigned int feature;
-    unsigned int total_cnt;
-    std::vector<data_t> preds;
+    std::vector<pred_t> preds;
 
-    Node(data_t threshold, unsigned int feature) : threshold(threshold), feature(feature), total_cnt(0) {}
+    Node(data_t threshold, unsigned int feature) : threshold(threshold), feature(feature) {}
     Node() = default;
 };
 
+template <TREE_INIT tree_init, TREE_NEXT tree_next, typename data_t, typename pred_t>
 class Tree {
 private:
-    std::vector<Node> nodes;
+    std::vector<Node<data_t, pred_t>> nodes;
     unsigned int start_leaf;
     unsigned int n_nodes;
     unsigned int n_classes;
     unsigned long seed;
-    TREE_NEXT tree_next;
 
     inline unsigned int node_index(std::vector<data_t> const &x) const {
         unsigned int idx = 0;
@@ -309,7 +310,7 @@ private:
         // }
     }
 
-    void trained_nodes(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, TREE_INIT tree_init) {
+    void trained_nodes(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
         // <std::pair<std::vector<std::vector<data_t>>, std::vector<unsigned int>>
         std::queue<
             std::pair<std::vector<std::vector<data_t>>, std::vector<unsigned int>>
@@ -324,7 +325,7 @@ private:
             to_expand.pop();
 
             std::pair<data_t, unsigned int> split;
-            if (tree_init == TRAIN) {
+            if constexpr (tree_init == TRAIN) {
                 split = best_split(data.first, data.second, n_classes);
             } else {
                 split = random_split(data.first, data.second, seed);
@@ -349,11 +350,6 @@ private:
                     YRight.push_back(data.second[i]);
                 }
             }
-
-            // std::cout << nodes.size() << " : Choose feature " << f << " with threshold " << t << std::endl;
-            // std::cout << nodes.size() << " : Left has " << XLeft.size() << std::endl;
-            // std::cout << nodes.size() << " : Right has " << XRight.size() << std::endl;
-            // std::cout << std::endl;
 
             to_expand.push(std::make_pair(XLeft, YLeft));
             to_expand.push(std::make_pair(XRight, YRight));
@@ -387,25 +383,20 @@ private:
 
 public:
 
-    Tree(TREE_INIT tree_init, TREE_NEXT tree_next, unsigned int max_depth, unsigned int n_classes, unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) : n_classes(n_classes), seed(seed), tree_next(tree_next) {
+    Tree(unsigned int max_depth, unsigned int n_classes, unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) : n_classes(n_classes), seed(seed) {
 
         start_leaf = std::pow(2,max_depth) - 1;
         n_nodes = std::pow(2,max_depth + 1) - 1;
 
-        if (tree_init == FULLY_RANDOM) {
+        if constexpr (tree_init == FULLY_RANDOM) {
             random_nodes(X, Y);
         } else {
-            trained_nodes(X, Y, tree_init);
+            trained_nodes(X, Y);
         }
     }
 
-    /**
-    Update trees:
-        - incremental: update statistics in leaf nodes reached by current batch and improve it this way
-        - gradient: perform gradient step
-    **/
     void next(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, xt::xarray<data_t> const &tree_grad, data_t step_size, unsigned int tree_num) {
-        if (tree_next == GRADIENT) {
+        if constexpr (tree_next == GRADIENT) {
             step_size = step_size / tree_grad.shape()[0];
             for (unsigned int i = 0; i < X.size(); ++i) {
                 auto idx = node_index(X[i]);
@@ -413,8 +404,7 @@ public:
                     nodes[idx].preds[j] = nodes[idx].preds[j] - step_size * tree_grad(tree_num, i, j);
                 } 
             }
-            /* Not implemented yet */
-        } else if (tree_next == INCREMENTAL) {
+        } else if constexpr (tree_next == INCREMENTAL) {
             for (unsigned int i = 0; i < X.size(); ++i) {
                 auto idx = node_index(X[i]);
                 auto sum = nodes[idx].total_cnt;

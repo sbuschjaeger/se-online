@@ -8,7 +8,7 @@
 
 class BiasedProxEnsembleAdaptor {
 private:
-    BiasedProxEnsemble * model = nullptr;
+    BiasedProxedEnsembleInterface * model = nullptr;
 
 public:
     BiasedProxEnsembleAdaptor(
@@ -23,37 +23,46 @@ public:
         const std::string next_mode, 
         const std::string loss
     ) { 
-        TREE_INIT tree_init;
-        if (init_mode == "random") {
-            tree_init = TREE_INIT::RANDOM;
-        } else if (init_mode == "fully-random") {
-            tree_init = TREE_INIT::FULLY_RANDOM;
-        } else if (init_mode == "train") {
-            tree_init = TREE_INIT::TRAIN;
-        } else {
-            throw std::runtime_error("Currently only the three init_modes {random, fully-random, train} are supported for trees, but you provided: " + init_mode);
-        }
-
-        TREE_NEXT tree_next;
-        if (next_mode == "incremental") {
-            tree_next = TREE_NEXT::INCREMENTAL;
-        } else if (next_mode == "none") {
-            tree_next = TREE_NEXT::NONE;
-        } else if (next_mode == "gradient") {
-            tree_next = TREE_NEXT::GRADIENT;
-        } else {
-            throw std::runtime_error("Currently only the three next_modes {incremental, none, gradient} are supported for trees, but you provided: " + next_mode);
-        }
+        std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > _loss;
+        std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > _loss_deriv;
 
         if (loss == "cross-entropy") {
-            model = new BiasedProxEnsemble(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight, tree_init, tree_next, cross_entropy, cross_entropy_deriv);
+            _loss = cross_entropy;
+            _loss_deriv = cross_entropy_deriv;
         } else if (loss  == "exp") {
-            model = new BiasedProxEnsemble(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight, tree_init, tree_next, exponential, exponential_deriv);
+            _loss = exponential;
+            _loss_deriv = exponential_deriv;
         } else if (loss  == "mse") {
-            model = new BiasedProxEnsemble(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight, tree_init, tree_next, mse, mse_deriv);
+            _loss = mse;
+            _loss_deriv = mse_deriv;
         } else {
             throw std::runtime_error("Currently only the three losses {cross-entropy, exp, mse} are supported, but you provided: " + loss);
         }
+
+        // Yeha this is ugly and there is probably clever way to do this with C++17/20, but this was quicker to code and it gets the job done.
+        // Also, lets be real here: There is only a limited chance more init/next modes are added without much refactoring of the whole project
+        if (init_mode == "random" && next_mode == "incremental") {
+            model = new BiasedProxEnsemble<TREE_INIT::RANDOM, TREE_NEXT::INCREMENTAL>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
+        } else if (init_mode == "random" && next_mode == "gradient") {
+            model = new BiasedProxEnsemble<TREE_INIT::RANDOM, TREE_NEXT::GRADIENT>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
+        } else if (init_mode == "random" && next_mode == "none") {
+            model = new BiasedProxEnsemble<TREE_INIT::RANDOM, TREE_NEXT::NONE>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
+        } else if (init_mode == "fully-random" && next_mode == "incremental") {
+            model = new BiasedProxEnsemble<TREE_INIT::FULLY_RANDOM, TREE_NEXT::INCREMENTAL>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
+        } else if (init_mode == "fully-random" && next_mode == "gradient") {
+            model = new BiasedProxEnsemble<TREE_INIT::FULLY_RANDOM, TREE_NEXT::GRADIENT>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
+        } else if (init_mode == "fully-random" && next_mode == "none") {
+            model = new BiasedProxEnsemble<TREE_INIT::FULLY_RANDOM, TREE_NEXT::NONE>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
+        } else if (init_mode == "train" && next_mode == "incremental") {
+            model = new BiasedProxEnsemble<TREE_INIT::TRAIN, TREE_NEXT::INCREMENTAL>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
+        } else if (init_mode == "train" && next_mode == "gradient") {
+            model = new BiasedProxEnsemble<TREE_INIT::TRAIN, TREE_NEXT::GRADIENT>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
+        } else if (init_mode == "train" && next_mode == "none") {
+            model = new BiasedProxEnsemble<TREE_INIT::TRAIN, TREE_NEXT::NONE>(max_depth, max_trees, n_classes, seed, step_size, lambda, init_weight,  _loss, _loss_deriv);
+        } else {
+            throw std::runtime_error("Currently only the three init_modes {random, fully-random, train} and the three next_modes {incremental, none, gradient} are supported for trees, but you provided a combination of " + init_mode + " and " + next_mode);
+        }
+ 
     }
 
     data_t next(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {

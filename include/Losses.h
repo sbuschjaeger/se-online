@@ -52,6 +52,43 @@ xt::xarray<data_t> cross_entropy_deriv(xt::xarray<data_t> const &pred, xt::xarra
     return grad;
 }
 
+xt::xarray<data_t> sebastian(xt::xarray<data_t> const &pred, xt::xarray<data_t> const &target){
+    xt::xarray<data_t> losses = xt::xarray<data_t>::from_shape(pred.shape());
+
+    for (unsigned int i = 0; i < pred.shape()[0]; ++i) {
+        unsigned int ipred = xt::argmax(pred, 1)();
+        data_t pi = pred(i, ipred);
+
+        for (unsigned int j = 0; j < pred.shape()[1]; ++j) {
+            if (target(i) != ipred) {
+                losses(i,j) = std::max(0, pi - pred(i,j));
+            } else {
+                losses(i,j) = 0;
+            }
+        }
+    }
+    return losses;
+}
+
+xt::xarray<data_t> sebastian_deriv(xt::xarray<data_t> const &pred, xt::xarray<data_t> const &target){
+    // TODO
+    xt::xarray<data_t> losses = xt::xarray<data_t>::from_shape(pred.shape());
+
+    for (unsigned int i = 0; i < pred.shape()[0]; ++i) {
+        unsigned int ipred = xt::argmax(pred, 1)();
+        data_t pi = pred(i, ipred);
+
+        for (unsigned int j = 0; j < pred.shape()[1]; ++j) {
+            if (target(i) != ipred) {
+                losses(i,j) = std::max(0, pi - pred(i,j));
+            } else {
+                losses(i,j) = 0;
+            }
+        }
+    }
+    return losses;
+}
+
 xt::xarray<data_t> exponential(xt::xarray<data_t> const &pred, xt::xarray<data_t> const &target){
     //TODO Assert shape
     xt::xarray<data_t> target_one_hot = xt::xarray<data_t>::from_shape(pred.shape());

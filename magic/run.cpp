@@ -132,7 +132,7 @@ int main() {
     data_t l_reg = 1e-5;
     data_t init_weight = 0.0;
 
-    BiasedProxEnsemble est(max_depth, max_trees, n_classes, seed, step_size, l_reg, init_weight, TREE_INIT::TRAIN, TREE_NEXT::GRADIENT, exponential, exponential_deriv);
+    BiasedProxEnsemble<TREE_INIT::TRAIN, TREE_NEXT::GRADIENT> est(max_depth, max_trees, n_classes, seed, step_size, l_reg, init_weight, hinge2, hinge2_deriv);
     start = std::chrono::steady_clock::now();
 
     for (unsigned int i = 0; i < epochs; ++i) {
