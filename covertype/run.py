@@ -127,11 +127,10 @@ if not args.local and not args.ray and not args.multi:
     print("No processing mode found, defaulting to `local` processing.")
     args.local = True
 
-# df = pd.read_csv("magic/magic04.data")
-df = pd.read_csv("magic04.data")
+df = pd.read_csv("covtype.data")
 X = df.values[:,:-1].astype(np.float64)
 Y = df.values[:,-1]
-Y = np.array([0 if y == 'g' else 1 for y in Y])
+Y = Y - min(Y)
 
 scaler = MinMaxScaler()
 X = scaler.fit_transform(X)
@@ -180,7 +179,7 @@ for bs, depth in zip([32,128,512,2048], [3,5,7,10]):
         "max_depth":depth,
         "loss":"cross-entropy",
         "batch_size":bs,
-        "epochs":50,
+        "epochs":10,
         "verbose":False,
         "eval_every_items":2048,
         "eval_every_epochs":1,
@@ -250,7 +249,7 @@ for bs, depth in zip([32,32,128,512,1024], [1,3,5,7,10]):
         "max_depth":depth,
         "loss":"cross-entropy",
         "batch_size":bs,
-        "epochs":50,
+        "epochs":10,
         "verbose":False,
         "eval_every_items":2048,
         "eval_every_epochs":1,
@@ -339,7 +338,7 @@ for bs, depth in zip([32, 32, 128], [1, 3, 5]):
         "max_depth":depth,
         "loss":"cross-entropy",
         "batch_size":bs,
-        "epochs":50,
+        "epochs":10,
         "verbose":False,
         "eval_every_items":2048,
         "eval_every_epochs":1,
@@ -387,7 +386,7 @@ for T in [16]:
             "loss":"cross-entropy",
             "batch_size":128,
             "verbose":False,
-            "epochs":50,
+            "epochs":10,
             "eval_every_items":2048,
             "eval_every_epochs":1,
             "X":X,
@@ -413,7 +412,7 @@ for T in [16]:
             "loss":"cross-entropy",
             "batch_size":128,
             "verbose":False,
-            "epochs":50,
+            "epochs":10,
             "eval_every_items":2048,
             "eval_every_epochs":1,
             "X":X,

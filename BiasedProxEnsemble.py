@@ -27,7 +27,7 @@ class BiasedProxEnsemble(OnlineLearner):
                 *args, **kwargs
                 ):
                         
-        assert loss in ["mse","cross-entropy", "exp"], "Currently only {mse, cross entropy, exp} loss is supported"
+        assert loss in ["mse","cross-entropy"], "Currently only {mse, cross entropy} loss is supported"
         assert init_mode in ["random", "train", "fully-random"], "Currently only {random, train, fully-random} init_mode supported"
         assert next_mode in ["incremental", "none", "gradient"], "Currently only {incremental, none, gradient} next_mode supported"
         assert max_depth >= 1, "max_depth should be at-least 1!"
@@ -58,17 +58,14 @@ class BiasedProxEnsemble(OnlineLearner):
             output = self.predict_proba(data)
             if self.loss == "mse":
                 target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
-                loss = (output - target_one_hot) * (output - target_one_hot)
+                p = softmax(output, axis=1)
+                loss = (p - target_one_hot) * (p - target_one_hot)
             elif self.loss == "cross-entropy":
                 target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
                 p = softmax(output, axis=1)
-                loss = -target_one_hot*np.log(p)
-            elif self.loss == "exp":
-                target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
-                p = softmax(output, axis=1)
-                loss = np.exp(-1.0 / self.n_classes_ * target_one_hot * output)
+                loss = -target_one_hot*np.log(p + 1e-7)
             else: 
-                raise "Currently only the three losses {{cross-entropy, exp, mse}} are supported, but you provided: {}".format(self.loss)
+                raise "Currently only the three losses {{cross-entropy, exp}} are supported, but you provided: {}".format(self.loss)
             return {"loss": np.mean(loss), "num_trees": self.num_trees(), "num_parameters":self.num_parameters()}, output
 
     def num_trees(self):
@@ -77,7 +74,7 @@ class BiasedProxEnsemble(OnlineLearner):
     def num_parameters(self):
         n_inner = 2**(self.max_depth) - 1
         n_leafs = 2**(self.max_depth) 
-        return self.model.num_trees() * (2*n_inner + self.n_classes_ * n_leafs)
+        return self.model.num_trees() * self.n_classes_ * n_leafs #(2*n_inner + self.n_classes_ * n_leafs)
 
     def fit(self, X, y, sample_weight = None):
         classes_ = unique_labels(y)

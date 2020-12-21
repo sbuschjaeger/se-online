@@ -19,8 +19,8 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -ffast-math -march=native -mtune=native")
 # implicit directories it works, but this may break other stuff. See:
 #   https://stackoverflow.com/questions/58541131/why-is-cmake-removing-some-include-directories-from-include-directories-calls/58589570#58589570 
 #   https://gitlab.kitware.com/cmake/cmake/-/issues/17966
-#unset(CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES)
-#unset(CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES)
+unset(CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES)
+unset(CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES)
 
 add_subdirectory(pybind11)
 
