@@ -19,8 +19,9 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -ffast-math -march=native -mtune=native")
 # implicit directories it works, but this may break other stuff. See:
 #   https://stackoverflow.com/questions/58541131/why-is-cmake-removing-some-include-directories-from-include-directories-calls/58589570#58589570 
 #   https://gitlab.kitware.com/cmake/cmake/-/issues/17966
-unset(CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES)
-unset(CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES)
+
+# unset(CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES)
+# unset(CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES)
 
 add_subdirectory(pybind11)
 
@@ -32,6 +33,10 @@ include_directories("./include")
 add_executable(run_magic magic/run.cpp)
 target_include_directories(run_magic PUBLIC ${xtensor_INCLUDE_DIRS})
 target_link_libraries(run_magic PRIVATE xtensor xtensor::optimize xtensor::use_xsimd)
+
+add_executable(run_covtyp covertype/run.cpp)
+target_include_directories(run_covtyp PUBLIC ${xtensor_INCLUDE_DIRS})
+target_link_libraries(run_covtyp PRIVATE xtensor xtensor::optimize xtensor::use_xsimd)
 
 pybind11_add_module(PyBPE include/Python.cpp)
 target_include_directories(PyBPE PRIVATE ${xtensor_INCLUDE_DIRS})

@@ -39,16 +39,16 @@ def pre(cfg):
     for key in get_ctor_arguments(model_ctor):
         if key == "out_file":
             expected["out_file"] = os.path.join(cfg["out_path"], "training.jsonl")
-        elif key == "x_test":
-            X = cfg["X"]
-            i = cfg["run_id"]
-            _, itest = cfg["idx"][i]
-            expected["x_test"] = X[itest]
-        elif key == "y_test":
-            Y = cfg["Y"]
-            i = cfg["run_id"]
-            _, itest = cfg["idx"][i]
-            expected["y_test"] = Y[itest]
+        # elif key == "x_test":
+        #     X = cfg["X"]
+        #     i = cfg["run_id"]
+        #     _, itest = cfg["idx"][i]
+        #     expected["x_test"] = X[itest]
+        # elif key == "y_test":
+        #     Y = cfg["Y"]
+        #     i = cfg["run_id"]
+        #     _, itest = cfg["idx"][i]
+        #     expected["y_test"] = Y[itest]
         
         if key in tmpcfg:
             expected[key] = tmpcfg[key]
@@ -57,19 +57,18 @@ def pre(cfg):
     return model
 
 def fit(cfg, model):
-    i = cfg["run_id"]
-    itrain, _ = cfg["idx"][i]
-    X, Y = cfg["X"],cfg["Y"]
+    X, Y = cfg["x_train"],cfg["y_train"]
 
-    model.fit(X[itrain], Y[itrain])
+    model.fit(X, Y)
     return model
 
 def post(cfg, model):
-    i = cfg["run_id"]
-    itrain, itest = cfg["idx"][i]
+    X_test = cfg["x_test"]
+    Y_test = cfg["y_test"]
+
+    X_train = cfg["x_train"]
+    Y_train = cfg["y_train"]
     scores = {}
-    X = cfg["X"]
-    Y = cfg["Y"]
 
     def _loss(pred, target):
         if "eval_loss" in cfg:
@@ -89,13 +88,13 @@ def post(cfg, model):
             raise "Wrong loss given. Loss was {} but expected {{mse, cross-entropy}}".format(loss_type)
         return np.mean(loss)
 
-    test_output = model.predict_proba(X[itest])
-    scores["test_accuracy"] = accuracy_score(Y[itest], test_output.argmax(axis=1))*100.0
-    scores["test_loss"] = _loss(test_output, Y[itest])
+    test_output = model.predict_proba(X_test)
+    scores["test_accuracy"] = accuracy_score(Y_test, test_output.argmax(axis=1))*100.0
+    scores["test_loss"] = _loss(test_output, Y_test)
 
-    train_output = model.predict_proba(X[itrain])
-    scores["train_accuracy"] = accuracy_score(Y[itrain], train_output.argmax(axis=1))*100.0
-    scores["train_loss"] = _loss(train_output, Y[itrain])
+    train_output = model.predict_proba(X_train)
+    scores["train_accuracy"] = accuracy_score(Y_train, train_output.argmax(axis=1))*100.0
+    scores["train_loss"] = _loss(train_output, Y_train)
 
     if isinstance(model, (GradientBoostingClassifier, RandomForestClassifier, ExtraTreesClassifier)):
         scores["n_estimators"] = len(model.estimators_)
@@ -127,17 +126,23 @@ if not args.local and not args.ray and not args.multi:
     print("No processing mode found, defaulting to `local` processing.")
     args.local = True
 
-df = pd.read_csv("covtype.data")
-X = df.values[:,:-1].astype(np.float64)
-Y = df.values[:,-1]
-Y = Y - min(Y)
+df_train = pd.read_csv("sat.trn", sep=" ", header=None)
+X_train = df_train.values[:,:-1].astype(np.float64)
+Y_train = df_train.values[:,-1]
+# Y_train = Y_train - min(Y_train)
+Y_train[Y_train == 7] = 0
 
 scaler = MinMaxScaler()
-X = scaler.fit_transform(X)
+X_train = scaler.fit_transform(X_train)
 
-n_splits = 5
-kf = KFold(n_splits=n_splits, random_state=12345, shuffle=True)
-idx = np.array([(train_idx, test_idx) for train_idx, test_idx in kf.split(X)], dtype=object)
+df_test = pd.read_csv("sat.tst", sep=" ", header=None)
+X_test = df_test.values[:,:-1].astype(np.float64)
+Y_test = df_test.values[:,-1]
+X_test = scaler.transform(X_test)
+# Y_test = Y_test - min(Y_test)
+Y_test[Y_test == 7] = 0
+print(set(Y_test))
+print(set(Y_train))
 
 if args.local:
     basecfg = {
@@ -180,14 +185,13 @@ shared_cfg = {
     "verbose":True,
     "eval_every_items":0,
     "eval_every_epochs":1,
-    "X":X,
-    "Y":Y,
-    "idx":idx,
-    "repetitions":n_splits,
+    "repetitions":0,
     "seed":12345
 }
 
 models = []
+
+
 
 models.append(
     {
@@ -204,13 +208,14 @@ models.append(
         "loss":"cross-entropy",
         "batch_size":128,
         "verbose":True,
-        "epochs":10,
+        "epochs":50,
         "eval_every_items":0,
         "eval_every_epochs":1,
-        "X":X,
-        "Y":Y,
-        "idx":idx,
-        "repetitions":n_splits,
+        "x_train":X_train,
+        "x_test":X_test,
+        "y_train":Y_train,
+        "y_test":Y_test,
+        "repetitions":1,
         "seed":12345
     }
 )

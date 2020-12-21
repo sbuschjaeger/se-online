@@ -51,8 +51,8 @@ class CMakeBuild(build_ext):
             cmake_args += ['-DCMAKE_BUILD_TYPE=' + cfg]
             # CMake sometimes does not really respect the compiler we are using (e.g. if installed inside a conda environment)
             # So lets make sure we use $CC / $CXX which is set appropriatley by conda
-            cmake_args += ['-DCMAKE_C_COMPILER=' + env['CC']]
-            cmake_args += ['-DCMAKE_CXX_COMPILER=' + env['CXX']]
+            # cmake_args += ['-DCMAKE_C_COMPILER=' + env['CC']]
+            # cmake_args += ['-DCMAKE_CXX_COMPILER=' + env['CXX']]
             build_args += ['--', '-j', str(multiprocessing.cpu_count())]
 
         env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(env.get('CXXFLAGS', ''),

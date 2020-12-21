@@ -92,7 +92,7 @@ class OnlineLearner(ABC):
 
     def fit(self, X, y, sample_weight = None):
         self.X_ = X
-        self.y_ = y
+        self.y_ = y 
         
         self.classes_ = unique_labels(y)
         self.n_classes_ = len(self.classes_)
