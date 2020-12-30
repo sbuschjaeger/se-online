@@ -8,3 +8,4 @@ PyBPE.egg-info/*
 *.jsonl
 *trn
 *tst
+*.arff
