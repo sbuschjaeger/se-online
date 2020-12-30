@@ -141,8 +141,6 @@ Y_test = df_test.values[:,-1]
 X_test = scaler.transform(X_test)
 # Y_test = Y_test - min(Y_test)
 Y_test[Y_test == 7] = 0
-print(set(Y_test))
-print(set(Y_train))
 
 if args.local:
     basecfg = {
@@ -177,76 +175,22 @@ else:
     #     "verbose":False
     # }
 
-shared_cfg = {
-    "max_depth":12,
-    "loss":"cross-entropy",
-    "batch_size":256,
-    "epochs":2,
-    "verbose":True,
-    "eval_every_items":0,
-    "eval_every_epochs":1,
-    "repetitions":0,
-    "seed":12345
-}
-
 models = []
 
-
-
-models.append(
-    {
-        "model":RiverModel,
-        "river_model":river.ensemble.SRPClassifier(
-            n_models = 2,
-            model = river.tree.ExtremelyFastDecisionTreeClassifier(
-                grace_period = 300,
-                split_confidence = 1e-6,
-                min_samples_reevaluate = 300,
-                leaf_prediction = "mc"
-            ),
-        ),
+for bs, depth in zip([32,128,512,2048], [3,5,7,10]):
+    shared_cfg = {
+        "max_depth":depth,
         "loss":"cross-entropy",
-        "batch_size":128,
-        "verbose":True,
+        "batch_size":bs,
         "epochs":50,
-        "eval_every_items":0,
+        "verbose":False,
+        "eval_every_items":2048,
         "eval_every_epochs":1,
         "x_train":X_train,
         "x_test":X_test,
         "y_train":Y_train,
         "y_test":Y_test,
         "repetitions":1,
-        "seed":12345
-    }
-)
-
-# models.append(
-#     {
-#         "model":BiasedProxEnsemble,
-#         "max_trees":0,
-#         "step_size":1e-2,
-#         "l_reg":1e-3,
-#         "init_mode":"train",
-#         "init_weight":1.0,
-#         "next_mode":"gradient",
-#         **shared_cfg
-#     }
-# )
-
-'''
-for bs, depth in zip([32,128,512,2048], [3,5,7,10]):
-    shared_cfg = {
-        "max_depth":depth,
-        "loss":"cross-entropy",
-        "batch_size":bs,
-        "epochs":10,
-        "verbose":False,
-        "eval_every_items":2048,
-        "eval_every_epochs":1,
-        "X":X,
-        "Y":Y,
-        "idx":idx,
-        "repetitions":n_splits,
         "seed":12345
     }
 
@@ -309,14 +253,15 @@ for bs, depth in zip([32,32,128,512,1024], [1,3,5,7,10]):
         "max_depth":depth,
         "loss":"cross-entropy",
         "batch_size":bs,
-        "epochs":10,
+        "epochs":50,
         "verbose":False,
         "eval_every_items":2048,
         "eval_every_epochs":1,
-        "X":X,
-        "Y":Y,
-        "idx":idx,
-        "repetitions":n_splits,
+        "x_train":X_train,
+        "x_test":X_test,
+        "y_train":Y_train,
+        "y_test":Y_test,
+        "repetitions":1,
         "seed":12345
     }
 
@@ -398,14 +343,15 @@ for bs, depth in zip([32, 32, 128], [1, 3, 5]):
         "max_depth":depth,
         "loss":"cross-entropy",
         "batch_size":bs,
-        "epochs":10,
+        "epochs":50,
         "verbose":False,
         "eval_every_items":2048,
         "eval_every_epochs":1,
-        "X":X,
-        "Y":Y,
-        "idx":idx,
-        "repetitions":n_splits,
+        "x_train":X_train,
+        "x_test":X_test,
+        "y_train":Y_train,
+        "y_test":Y_test,
+        "repetitions":1,
         "seed":12345
     }
 
@@ -446,13 +392,14 @@ for T in [16]:
             "loss":"cross-entropy",
             "batch_size":128,
             "verbose":False,
-            "epochs":10,
+            "epochs":50,
             "eval_every_items":2048,
             "eval_every_epochs":1,
-            "X":X,
-            "Y":Y,
-            "idx":idx,
-            "repetitions":n_splits,
+            "x_train":X_train,
+            "x_test":X_test,
+            "y_train":Y_train,
+            "y_test":Y_test,
+            "repetitions":1,
             "seed":12345
         }
     )
@@ -472,13 +419,14 @@ for T in [16]:
             "loss":"cross-entropy",
             "batch_size":128,
             "verbose":False,
-            "epochs":10,
+            "epochs":50,
             "eval_every_items":2048,
             "eval_every_epochs":1,
-            "X":X,
-            "Y":Y,
-            "idx":idx,
-            "repetitions":n_splits,
+            "x_train":X_train,
+            "x_test":X_test,
+            "y_train":Y_train,
+            "y_test":Y_test,
+            "repetitions":1,
             "seed":12345
         }
     )
@@ -494,10 +442,11 @@ for T in [16, 32, 64, 128]:
                 "loss":"cross-entropy",
                 "n_estimators":T,
                 "verbose":False,
-                "X":X,
-                "Y":Y,
-                "idx":idx,
-                "repetitions":n_splits,
+                "x_train":X_train,
+                "x_test":X_test,
+                "y_train":Y_train,
+                "y_test":Y_test,
+                "repetitions":1,
                 "random_state":12345
             }
         )
@@ -511,10 +460,11 @@ for T in [16, 32, 64, 128]:
                 "loss":"cross-entropy",
                 "n_estimators":T,
                 "verbose":False,
-                "X":X,
-                "Y":Y,
-                "idx":idx,
-                "repetitions":n_splits,
+                "x_train":X_train,
+                "x_test":X_test,
+                "y_train":Y_train,
+                "y_test":Y_test,
+                "repetitions":1,
                 "random_state":12345
             }
         )
@@ -526,17 +476,17 @@ for T in [16, 32, 64, 128]:
                 "max_depth":None,
                 "loss":"deviance",
                 "eval_loss":"cross-entropy",
-                "subsample":bs / min([len(i[0]) for i in idx]),
+                "subsample":bs / len(Y_train),
                 "verbose":False,
-                "X":X,
-                "Y":Y,
-                "idx":idx,
-                "repetitions":n_splits,
+                "x_train":X_train,
+                "x_test":X_test,
+                "y_train":Y_train,
+                "y_test":Y_test,
+                "repetitions":1,
                 "random_state":12345
             }
         )
 
 random.shuffle(models)
-'''
 
 run_experiments(basecfg, models)

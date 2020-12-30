@@ -224,7 +224,7 @@ class JaxModel(OnlineLearner):
 
             output = self.predict_proba(data)
 
-            return {"loss": np.asarray(loss), "num_trees": self.num_trees(),"num_parameters":self.num_parameters()}, output
+            return {"loss": np.asarray(loss), "num_trees": self.num_trees(),"num_parameters":self.num_parameters()}, output, 1
         else:
             output = self.predict_proba(data)
             if self.loss == "mse":
@@ -234,7 +234,7 @@ class JaxModel(OnlineLearner):
                 target_one_hot = np.array( [ [1 if y == i else 0 for i in range(self.n_classes_)] for y in target] )
                 p = jax.nn.softmax(output, axis=1)
                 loss = -target_one_hot*jax.numpy.log(p)
-            return {"loss": np.asarray(loss.mean()), "num_trees": self.num_trees(),"num_parameters":self.num_parameters()}, output
+            return {"loss": np.asarray(loss.mean()), "num_trees": self.num_trees(),"num_parameters":self.num_parameters()}, output, 0
 
     def fit(self, X, y, sample_weight = None):
         classes_ = unique_labels(y)

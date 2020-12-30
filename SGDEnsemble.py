@@ -36,6 +36,7 @@ class SGDEnsemble(OnlineLearner):
                 init_mode = "random",
                 next_mode = "incremental",
                 init_weight = 0,
+                is_nominal = None,
                 *args, **kwargs
                 ):
                         
@@ -54,6 +55,7 @@ class SGDEnsemble(OnlineLearner):
         self.init_mode = init_mode
         self.next_mode = next_mode
         self.init_weight = init_weight
+        self.is_nominal = is_nominal
         self.model = None
     
     def predict_proba(self, X):
@@ -64,7 +66,7 @@ class SGDEnsemble(OnlineLearner):
         if train:
             lsum = self.model.next(data, target)
             output = self.predict_proba(data)
-            return {"loss": lsum / (data.shape[0] * self.n_classes_), "num_trees": self.model.num_trees(), "num_parameters":self.num_parameters()}, output
+            return {"loss": lsum / (data.shape[0] * self.n_classes_), "num_trees": self.model.num_trees(), "num_parameters":self.num_parameters()}, output, 1
         else:
             output = self.predict_proba(data)
             if self.loss == "mse":
@@ -77,7 +79,7 @@ class SGDEnsemble(OnlineLearner):
                 loss = -target_one_hot*np.log(p + 1e-7)
             else:
                 raise "Currently only the three losses {{cross-entropy, mse}} are supported, but you provided: {}".format(self.loss)
-            return {"loss": np.mean(loss), "num_trees":  self.num_trees(), "num_parameters":self.num_parameters()}, output
+            return {"loss": np.mean(loss), "num_trees":  self.num_trees(), "num_parameters":self.num_parameters()}, output, 0
 
     def num_trees(self):
         return self.model.num_trees()
@@ -91,5 +93,11 @@ class SGDEnsemble(OnlineLearner):
     def fit(self, X, y, sample_weight = None):
         classes_ = unique_labels(y)
         n_classes_ = len(classes_)
-        self.model = PyBPE.BiasedProxEnsemble(self.max_depth, self.max_trees, n_classes_, self.seed, self.step_size, 0, self.init_weight, self.init_mode, self.next_mode, self.loss)
+
+        if self.is_nominal is None:
+            is_nominal = [False for _ in range(X.shape[1])]
+        else:
+            is_nominal = self.is_nominal
+
+        self.model = PyBPE.BiasedProxEnsemble(self.max_depth, self.max_trees, n_classes_, self.seed, self.step_size, 0, self.init_weight, is_nominal, self.init_mode, self.next_mode, self.loss)
         super().fit(X, y, sample_weight)

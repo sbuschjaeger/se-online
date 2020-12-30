@@ -48,6 +48,7 @@ private:
     data_t step_size;
     data_t lambda;
     data_t const init_weight;
+    std::vector<bool> const is_nominal;
 
     std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > loss;
     std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > loss_deriv;
@@ -62,9 +63,10 @@ public:
         data_t step_size,
         data_t lambda,
         data_t init_weight,
+        std::vector<bool> const &is_nominal,
         std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > loss,
         std::function< xt::xarray<data_t>(xt::xarray<data_t> const &, xt::xarray<data_t> const &) > loss_deriv
-    ) : max_depth(max_depth), max_trees(max_trees), n_classes(n_classes), seed(seed), step_size(step_size), lambda(lambda), init_weight(init_weight), loss(loss), loss_deriv(loss_deriv) {}
+    ) : max_depth(max_depth), max_trees(max_trees), n_classes(n_classes), seed(seed), step_size(step_size), lambda(lambda), init_weight(init_weight), is_nominal(is_nominal), loss(loss), loss_deriv(loss_deriv) {}
 
     data_t next(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
         xt::xarray<unsigned int> y_tensor = xt::xarray<unsigned int>::from_shape({Y.size()});
@@ -75,7 +77,7 @@ public:
         if (max_trees == 0 || _trees.size() < max_trees) {
             // Create new trees
             _weights.push_back(init_weight);
-            _trees.push_back(Tree<tree_init, tree_next, pred_t>(max_depth, n_classes, seed++, X, Y));
+            _trees.push_back(Tree<tree_init, tree_next, pred_t>(max_depth, n_classes, seed++, X, Y, is_nominal));
         }
 
         xt::xarray<data_t> all_proba = xt::xarray<data_t>::from_shape({_trees.size(), X.size(), n_classes});

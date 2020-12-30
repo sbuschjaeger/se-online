@@ -85,4 +85,4 @@ class RiverModel(OnlineLearner):
             losses.append(loss)
             output.append(pred)
         
-        return {"loss": np.mean(loss), "num_trees": self.num_trees(), "num_parameters":self.num_parameters()}, np.array(output)
+        return {"loss": np.mean(loss), "num_trees": self.num_trees(), "num_parameters":self.num_parameters()}, np.array(output), data.shape[0]

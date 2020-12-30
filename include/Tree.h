@@ -186,6 +186,7 @@ private:
      * @brief  Compute a random split for the given data. This algorithm has O(d * log d + d * N) runtime in the worst case, but should usually run in O(d * log d + N), where N is the number of examples and d is the number of features.
      * This implementation ensures that the returned split splits the data so that each child is non-empty if applied to the given data (at-least one example form X is routed towards left and towards right). The only exception occurs if X is empty or contains one example. In this case we return feature 0 with threshold 1. Threshold-values are placed in the middle between two samples. 
      * TODO: This code assumes that all features are [0,1] for the X.size() <= 1 or in case of invalid splits. Change that 
+     * TODO: Add nominal flag for one hot encoded nominal features
      * @note   
      * @param  &X: The example-set which is used to compute the splitting
      * @param  &Y: The label-set which is used to compute the splitting
@@ -264,7 +265,7 @@ private:
      * @param  &Y: 
      * @retval None
      */
-    void random_nodes(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
+    void random_nodes(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, std::vector<bool> const &is_nominal) {
         std::mt19937 gen(seed);
         std::uniform_int_distribution<> idis(0, X[0].size() - 1);
         std::uniform_real_distribution<> fdis(0,1);
@@ -272,16 +273,17 @@ private:
         nodes.resize(n_nodes);
         for (unsigned int i = 0; i < n_nodes; ++i) {
             auto feature = idis(gen);
+            if (is_nominal[feature]) {
+                nodes[i].threshold = 0.5; //TODO Change this to 0?
+            } else {
+                nodes[i].threshold = fdis(gen);
+            }
             //std::uniform_real_distribution<> fdis(amin(feature), amax(feature));
             nodes[i].feature = feature;
-            nodes[i].threshold = fdis(gen);
 
             if (i >= start_leaf) {
                 nodes[i].preds.resize(n_classes);
                 std::fill(nodes[i].preds.begin(), nodes[i].preds.end(), 0);
-                // for (unsigned int j = 0; n_classes; ++j) {
-                //     nodes[i][j] = fdis(gen);
-                // }
             } 
         }
 
@@ -352,12 +354,25 @@ private:
 public:
 
     Tree(unsigned int max_depth, unsigned int n_classes, unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) : n_classes(n_classes), seed(seed) {
+        std::vector<bool> is_nominal(X[0].size());
+        std::fill(X.begin(), X.end(), false);
+        start_leaf = std::pow(2,max_depth) - 1;
+        n_nodes = std::pow(2,max_depth + 1) - 1;
+
+        if constexpr (tree_init == FULLY_RANDOM) {
+            random_nodes(X, Y, is_nominal);
+        } else {
+            trained_nodes(X, Y);
+        }
+    }
+
+    Tree(unsigned int max_depth, unsigned int n_classes, unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, std::vector<bool> const &is_nominal) : n_classes(n_classes), seed(seed) {
 
         start_leaf = std::pow(2,max_depth) - 1;
         n_nodes = std::pow(2,max_depth + 1) - 1;
 
         if constexpr (tree_init == FULLY_RANDOM) {
-            random_nodes(X, Y);
+            random_nodes(X, Y, is_nominal);
         } else {
             trained_nodes(X, Y);
         }
