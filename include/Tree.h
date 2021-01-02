@@ -33,7 +33,7 @@ private:
     unsigned int start_leaf;
     unsigned int n_nodes;
     unsigned int n_classes;
-    unsigned long seed;
+    std::mt19937 gen; 
 
     inline unsigned int node_index(std::vector<data_t> const &x) const {
         unsigned int idx = 0;
@@ -47,6 +47,96 @@ private:
             }
         }
         return idx;
+    }
+
+    static auto random_node(std::vector<bool> const &is_nominal, std::mt19937 &gen) {
+        std::uniform_int_distribution<> idis(0, is_nominal.size() - 1);
+        std::uniform_real_distribution<> fdis(0,1);
+        
+        unsigned int feature = idis(gen);
+        data_t threshold;
+        if (is_nominal[feature]) {
+            threshold = 0.5; 
+        } else {
+            threshold = fdis(gen);
+        }
+
+        return std::pair<data_t, unsigned int>(threshold, feature);
+    }
+
+     /**
+     * @brief  Compute a random split for the given data. This algorithm has O(d * log d + d * N) runtime in the worst case, but should usually run in O(d * log d + N), where N is the number of examples and d is the number of features.
+     * This implementation ensures that the returned split splits the data so that each child is non-empty if applied to the given data (at-least one example form X is routed towards left and towards right). The only exception occurs if X is empty or contains one example. In this case we return feature 0 with threshold 1. Threshold-values are placed in the middle between two samples. 
+     * TODO: This code assumes that all features are [0,1] for the X.size() <= 1 or in case of invalid splits. Change that 
+     * TODO: Add nominal flag for one hot encoded nominal features
+     * @note   
+     * @param  &X: The example-set which is used to compute the splitting
+     * @param  &Y: The label-set which is used to compute the splitting
+     * @param  n_classes: The number of classes
+     * @retval The best split as a std::pair<data_t, unsigned int>(best_threshold, best_feature) where the first entry is the threshold and the second entry the feature index.
+     */
+    static auto random_split(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, std::vector<bool> const &is_nominal, std::mt19937 &gen) {
+        if (X.size() <= 1) {
+            return random_node(is_nominal, gen);
+        }
+
+        // We want to split at a random feature. However, we also want to ensure that the left / right child receive at-least one example with this random
+        // split. Sometimes there are features which cannot ensure this (e.g. a binary features are '1'). Thus, we iterate over a random permutation of features 
+        // and return as soon as we find a valid split
+        std::vector<unsigned int> features(X[0].size());
+        std::iota(std::begin(features), std::end(features), 0); 
+        std::shuffle(features.begin(), features.end(), gen);
+
+        for (auto const & f: features) {
+            // We need to find the next smallest and next biggest value of the data to ensure that left/right will receive at-least 
+            // one example. This is a brute force implementation in O(N)
+            data_t smallest, second_smallest;
+            if(X[0][f] <X[1][f]){
+                smallest = X[0][f];
+                second_smallest = X[1][f];
+            } else {
+                smallest = X[1][f];
+                second_smallest = X[0][f];
+            }
+
+            data_t biggest, second_biggest;
+            if(X[0][f] > X[1][f]){
+                biggest = X[0][f];
+                second_biggest = X[1][f];
+            } else {
+                biggest = X[1][f];
+                second_biggest = X[0][f];
+            }
+
+            for (unsigned int i = 2; i < X.size(); ++i) {
+                if(X[i][f] > smallest ) { 
+                    second_smallest = smallest;
+                    smallest = X[i][f];
+                } else if(X[i][f] < second_smallest){
+                    second_smallest = X[i][f];
+                }
+
+                if(X[i][f] > biggest ) { 
+                    second_biggest = biggest;
+                    biggest = X[i][f];
+                } else if(X[i][f] > second_biggest){
+                    second_biggest = X[i][f];
+                }
+            }
+
+            // This is not a valid split if we cannot ensure that the left / right child receive at-least one example.
+            if (second_smallest == smallest || second_biggest == biggest) continue;
+            std::uniform_real_distribution<> fdis(second_smallest, second_biggest); 
+
+            // So usually I would expect the following line to work, but for some reason it does not. Is this a gcc bug?
+            //return std::make_pair<data_t, unsigned int>(static_cast<data_t>(fdis(gen)), f);
+            int ftmp = f;
+            return std::make_pair<data_t, unsigned int>(static_cast<data_t>(fdis(gen)), ftmp);
+        }
+
+        // If this is reached, then no valid split has been found and we default to the default split
+        return random_node(is_nominal, gen);
+        //return std::make_pair<data_t, unsigned int>(1.0, 0);
     }
 
     /**
@@ -87,9 +177,9 @@ private:
      * @param  n_classes: The number of classes
      * @retval The best split as a std::pair<data_t, unsigned int>(best_threshold, best_feature) where the first entry is the threshold and the second entry the feature index.
      */
-    static auto best_split(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, unsigned long n_classes) {
+    static auto best_split(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, std::vector<bool> const &is_nominal, long n_classes, std::mt19937 &gen) {
         if (X.size() <= 1) {
-            return std::make_pair<data_t, unsigned int>(1.0, 0);
+            return random_node(is_nominal, gen);
         }
 
         unsigned int n_data = X.size();
@@ -144,7 +234,7 @@ private:
             
             if (first) {
                 // We never choose a threshold which means that f_values[0] = f_values[1] = .. = f_values[end]. 
-                // This will not give us a good simplit, so ignore this feature
+                // This will not give us a good split, so ignore this feature
                 break;
             }
             // Compute the corresponding gini score 
@@ -182,82 +272,6 @@ private:
         return std::make_pair(overall_best_threshold, overall_best_feature);
     }
 
-     /**
-     * @brief  Compute a random split for the given data. This algorithm has O(d * log d + d * N) runtime in the worst case, but should usually run in O(d * log d + N), where N is the number of examples and d is the number of features.
-     * This implementation ensures that the returned split splits the data so that each child is non-empty if applied to the given data (at-least one example form X is routed towards left and towards right). The only exception occurs if X is empty or contains one example. In this case we return feature 0 with threshold 1. Threshold-values are placed in the middle between two samples. 
-     * TODO: This code assumes that all features are [0,1] for the X.size() <= 1 or in case of invalid splits. Change that 
-     * TODO: Add nominal flag for one hot encoded nominal features
-     * @note   
-     * @param  &X: The example-set which is used to compute the splitting
-     * @param  &Y: The label-set which is used to compute the splitting
-     * @param  n_classes: The number of classes
-     * @retval The best split as a std::pair<data_t, unsigned int>(best_threshold, best_feature) where the first entry is the threshold and the second entry the feature index.
-     */
-    static auto random_split(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, unsigned long seed) {
-        if (X.size() <= 1) {
-            return std::make_pair<data_t, unsigned int>(1.0, 0);
-        }
-
-        // We want to split at a random feature. However, we also want to ensure that the left / right child receive at-least one example with this random
-        // split. Sometimes there are features which cannot ensure this (e.g. a binary features are '1'). Thus, we iterate over a random permutation of features 
-        // and return as soon as we find a valid split
-        std::vector<unsigned int> features(X[0].size());
-        std::iota(std::begin(features), std::end(features), 0); 
-
-        std::mt19937 gen(seed);
-        std::shuffle(features.begin(), features.end(), gen);
-
-        for (auto const & f: features) {
-            // We need to find the next smallest and next biggest value of the data to ensure that left/right will receive at-least 
-            // one example. This is a brute force implementation in O(N)
-            data_t smallest, second_smallest;
-            if(X[0][f] <X[1][f]){
-                smallest = X[0][f];
-                second_smallest = X[1][f];
-            } else {
-                smallest = X[1][f];
-                second_smallest = X[0][f];
-            }
-
-            data_t biggest, second_biggest;
-            if(X[0][f] > X[1][f]){
-                biggest = X[0][f];
-                second_biggest = X[1][f];
-            } else {
-                biggest = X[1][f];
-                second_biggest = X[0][f];
-            }
-
-            for (unsigned int i = 2; i < X.size(); ++i) {
-                if(X[i][f] > smallest ) { 
-                    second_smallest = smallest;
-                    smallest = X[i][f];
-                } else if(X[i][f] < second_smallest){
-                    second_smallest = X[i][f];
-                }
-
-                if(X[i][f] > biggest ) { 
-                    second_biggest = biggest;
-                    biggest = X[i][f];
-                } else if(X[i][f] > second_biggest){
-                    second_biggest = X[i][f];
-                }
-            }
-
-            // This is not a valid split if we cannot ensure that the left / right child receive at-least one example.
-            if (second_smallest == smallest || second_biggest == biggest) continue;
-            std::uniform_real_distribution<> fdis(second_smallest, second_biggest); 
-
-            // So usually I would expect the following line to work, but for some reason it does not. Is this a gcc bug?
-            //return std::make_pair<data_t, unsigned int>(static_cast<data_t>(fdis(gen)), f);
-            int ftmp = f;
-            return std::make_pair<data_t, unsigned int>(static_cast<data_t>(fdis(gen)), ftmp);
-        }
-
-        // If this is reached, then no valid split has been found and we default to the default split
-        return std::make_pair<data_t, unsigned int>(1.0, 0);
-    }
-
     /**
      * @brief  
      * @note   
@@ -266,20 +280,14 @@ private:
      * @retval None
      */
     void random_nodes(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, std::vector<bool> const &is_nominal) {
-        std::mt19937 gen(seed);
         std::uniform_int_distribution<> idis(0, X[0].size() - 1);
         std::uniform_real_distribution<> fdis(0,1);
 
         nodes.resize(n_nodes);
         for (unsigned int i = 0; i < n_nodes; ++i) {
-            auto feature = idis(gen);
-            if (is_nominal[feature]) {
-                nodes[i].threshold = 0.5; //TODO Change this to 0?
-            } else {
-                nodes[i].threshold = fdis(gen);
-            }
-            //std::uniform_real_distribution<> fdis(amin(feature), amax(feature));
-            nodes[i].feature = feature;
+            auto tmp = random_node(is_nominal, gen);
+            nodes[i].threshold = std::get<0>(tmp);
+            nodes[i].feature = std::get<1>(tmp);
 
             if (i >= start_leaf) {
                 nodes[i].preds.resize(n_classes);
@@ -291,9 +299,20 @@ private:
             auto idx = node_index(X[i]);
             nodes[idx].preds[Y[i]] += 1;
         }
+
+        if constexpr (tree_next != INCREMENTAL) {
+            for (unsigned int i = start_leaf; i < n_nodes; ++i) {
+                data_t sum = std::accumulate(nodes[i].preds.begin(), nodes[i].preds.end(), 0.0);
+                if (sum > 0) {
+                    std::transform(nodes[i].preds.begin(), nodes[i].preds.end(), nodes[i].preds.begin(), [sum](auto& c){return 1.0/sum*c;});
+                } else {
+                    std::fill(nodes[i].preds.begin(), nodes[i].preds.end(), 1.0/n_classes);
+                }
+            }
+        }
     }
 
-    void trained_nodes(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) {
+    void trained_nodes(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, std::vector<bool> const & is_nominal) {
         // <std::pair<std::vector<std::vector<data_t>>, std::vector<unsigned int>>
         std::queue<std::pair<std::vector<std::vector<data_t>>, std::vector<unsigned int>>> to_expand; 
         to_expand.push(std::make_pair(X, Y));
@@ -307,16 +326,16 @@ private:
 
             std::pair<data_t, unsigned int> split;
             if constexpr (tree_init == TRAIN) {
-                split = best_split(data.first, data.second, n_classes);
+                split = best_split(data.first, data.second, is_nominal, n_classes, gen);
             } else {
-                split = random_split(data.first, data.second, seed);
+                split = random_split(data.first, data.second, is_nominal, gen);
             }
             auto t = split.first;
             auto f = split.second;
             
             // We assume complete trees in this implementation which means that we always have 2 children 
             // and that each path in the tree has max_depth length. Now it might happen that XLeft / XRight is empty. 
-            // In this best_split return t = 1, which means that _all_ data points are routed towards XLeft
+            // In this case, best_split returns with t = 1, which means that _all_ data points are routed towards XLeft
             // and we keep on adding nodes as long as required to built the complete tree
             nodes.push_back(Node<pred_t>(t, f));
             
@@ -347,13 +366,22 @@ private:
                 n.preds[l] += 1;
             }
 
+            if constexpr (tree_next != INCREMENTAL) {
+                data_t sum = data.second.size();
+                if (sum > 0) {
+                    std::transform(n.preds.begin(), n.preds.end(), n.preds.begin(), [sum](auto& c){return 1.0/sum*c;});
+                } else {
+                    std::fill(n.preds.begin(), n.preds.end(), 1.0/n_classes);
+                }
+            }
+
             nodes.push_back(n);
         }
     }
 
 public:
 
-    Tree(unsigned int max_depth, unsigned int n_classes, unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) : n_classes(n_classes), seed(seed) {
+    Tree(unsigned int max_depth, unsigned int n_classes, unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y) : n_classes(n_classes), gen(seed) {
         std::vector<bool> is_nominal(X[0].size());
         std::fill(X.begin(), X.end(), false);
         start_leaf = std::pow(2,max_depth) - 1;
@@ -366,7 +394,7 @@ public:
         }
     }
 
-    Tree(unsigned int max_depth, unsigned int n_classes, unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, std::vector<bool> const &is_nominal) : n_classes(n_classes), seed(seed) {
+    Tree(unsigned int max_depth, unsigned int n_classes, unsigned long seed, std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, std::vector<bool> const &is_nominal) : n_classes(n_classes), gen(seed) {
 
         start_leaf = std::pow(2,max_depth) - 1;
         n_nodes = std::pow(2,max_depth + 1) - 1;
@@ -374,7 +402,7 @@ public:
         if constexpr (tree_init == FULLY_RANDOM) {
             random_nodes(X, Y, is_nominal);
         } else {
-            trained_nodes(X, Y);
+            trained_nodes(X, Y, is_nominal);
         }
     }
 

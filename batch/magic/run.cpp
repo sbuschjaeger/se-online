@@ -123,7 +123,7 @@ int main() {
     std::iota(std::begin(batch_idx), std::end(batch_idx), 0); 
 
     unsigned int epochs = 50;
-    unsigned int batch_size = 128;
+    unsigned int batch_size = 32;
 
     unsigned int max_depth = 5;
     unsigned int max_trees = 0;

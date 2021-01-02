@@ -30,13 +30,9 @@ find_package(xtensor REQUIRED)
 
 include_directories("./include")
 
-add_executable(run_magic magic/run.cpp)
-target_include_directories(run_magic PUBLIC ${xtensor_INCLUDE_DIRS})
-target_link_libraries(run_magic PRIVATE xtensor xtensor::optimize xtensor::use_xsimd)
-
-add_executable(run_covtyp covertype/run.cpp)
-target_include_directories(run_covtyp PUBLIC ${xtensor_INCLUDE_DIRS})
-target_link_libraries(run_covtyp PRIVATE xtensor xtensor::optimize xtensor::use_xsimd)
+add_executable(debug debug.cpp)
+target_include_directories(debug PUBLIC ${xtensor_INCLUDE_DIRS})
+target_link_libraries(debug PRIVATE xtensor xtensor::optimize xtensor::use_xsimd)
 
 pybind11_add_module(PyBPE include/Python.cpp)
 target_include_directories(PyBPE PRIVATE ${xtensor_INCLUDE_DIRS})

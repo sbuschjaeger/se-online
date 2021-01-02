@@ -78,7 +78,7 @@ xt::xarray<data_t> cross_entropy_deriv(xt::xarray<data_t> const &pred, xt::xarra
  * @retval The mse loss for each class and each sample. The return tensor has a shape of (batch_size, n_classes). 
  */
 xt::xarray<data_t> mse(xt::xarray<data_t> const &pred, xt::xarray<unsigned int> const &target){
-    xt::xarray<data_t> p = softmax(pred);
+    //xt::xarray<data_t> p = softmax(pred);
     xt::xarray<data_t> target_one_hot = xt::xarray<data_t>::from_shape(pred.shape());
 
     for (unsigned int i = 0; i < pred.shape()[0]; ++i) {
@@ -91,7 +91,8 @@ xt::xarray<data_t> mse(xt::xarray<data_t> const &pred, xt::xarray<unsigned int> 
         }
     }
 
-    return (p-target_one_hot)*(p-target_one_hot);
+    //return (p-target_one_hot)*(p-target_one_hot);
+    return (pred-target_one_hot)*(pred-target_one_hot);
 }
 
 /**
@@ -102,7 +103,7 @@ xt::xarray<data_t> mse(xt::xarray<data_t> const &pred, xt::xarray<unsigned int> 
  * @retval The first derivative of the mse loss for each class and each sample. The return tensor has a shape of (batch_size, n_classes). 
  */
 xt::xarray<data_t> mse_deriv(xt::xarray<data_t> const &pred, xt::xarray<data_t> const &target){
-    xt::xarray<data_t> p = softmax(pred);
+    //xt::xarray<data_t> p = softmax(pred);
     xt::xarray<data_t> target_one_hot = xt::xarray<data_t>::from_shape(pred.shape());
 
     for (unsigned int i = 0; i < pred.shape()[0]; ++i) {
@@ -115,7 +116,40 @@ xt::xarray<data_t> mse_deriv(xt::xarray<data_t> const &pred, xt::xarray<data_t> 
         }
     }
 
-    return 2 * (pred - target_one_hot) * p * (1.0 - p) ;
+    //return 2 * (pred - target_one_hot) * p * (1.0 - p) ;
+    return 2 * (pred - target_one_hot) ;
+}
+
+xt::xarray<data_t> hinge2(xt::xarray<data_t> const &pred, xt::xarray<data_t> const &target){
+    xt::xarray<data_t> losses = xt::xarray<data_t>::from_shape(pred.shape());
+
+    for (unsigned int i = 0; i < pred.shape()[0]; ++i) {
+        for (unsigned int j = 0; j < pred.shape()[1]; ++j) {
+            if (target(i) == j) {
+                losses(i,j) = std::max(1.0 - 1 * pred(i,j), 0.0) * std::max(1.0 - 1 * pred(i,j), 0.0);
+            } else {
+                losses(i,j) = std::max(1.0 - (-1 * pred(i,j)), 0.0) * std::max(1.0 - (-1 * pred(i,j)), 0.0);
+            }
+        }
+    }
+
+    return losses;
+}
+
+xt::xarray<data_t> hinge2_deriv(xt::xarray<data_t> const &pred, xt::xarray<data_t> const &target){
+    xt::xarray<data_t> losses_deriv = xt::xarray<data_t>::from_shape(pred.shape());
+
+    for (unsigned int i = 0; i < pred.shape()[0]; ++i) {
+        for (unsigned int j = 0; j < pred.shape()[1]; ++j) {
+            if (target(i) == j) {
+                losses_deriv(i,j) = 2 * std::max(1.0 - 1 * pred(i,j), 0.0);
+            } else {
+                losses_deriv(i,j) = 2 * std::max(1.0 - (-1 * pred(i,j)), 0.0);
+            }
+        }
+    }
+
+    return losses_deriv;
 }
 
 #endif

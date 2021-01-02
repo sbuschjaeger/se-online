@@ -1,31 +1,12 @@
 import numpy as np
-import random
-from tqdm import tqdm
 
-from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.multiclass import unique_labels
-from sklearn.metrics import accuracy_score
 
-# from plotille import histogram
-#from PyBPE import BiasedProxEnsemble
 import PyBPE
-
-import numpy as np
-import random
-from tqdm import tqdm
-
-from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.utils.validation import check_is_fitted
-from sklearn.utils.multiclass import unique_labels
-from sklearn.metrics import accuracy_score
 
 from scipy.special import softmax
 
 from OnlineLearner import OnlineLearner
-# from plotille import histogram
-#from PyBPE import BiasedProxEnsemble
-import PyBPE
 
 class SGDEnsemble(OnlineLearner):
     def __init__(self,  
@@ -40,7 +21,7 @@ class SGDEnsemble(OnlineLearner):
                 *args, **kwargs
                 ):
                         
-        assert loss in ["mse","cross-entropy"], "Currently only {mse, cross entropy} loss is supported"
+        assert loss in ["mse","cross-entropy", "hinge2"], "Currently only {mse, cross-entropy, hinge2} loss is supported"
         assert init_mode in ["random", "train", "fully-random"], "Currently only {random, train, fully-random} init_mode supported"
         assert next_mode in ["incremental", "none", "gradient"], "Currently only {incremental, none, gradient} next_mode supported"
         assert max_depth >= 1, "max_depth should be at-least 1!"
@@ -70,6 +51,7 @@ class SGDEnsemble(OnlineLearner):
         else:
             output = self.predict_proba(data)
             if self.loss == "mse":
+                # TODO CHANGE HERE
                 target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
                 p = softmax(output, axis=1)
                 loss = (p - target_one_hot) * (p - target_one_hot)
@@ -77,6 +59,9 @@ class SGDEnsemble(OnlineLearner):
                 target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
                 p = softmax(output, axis=1)
                 loss = -target_one_hot*np.log(p + 1e-7)
+            elif self.loss == "hinge2":
+                return 0
+                # TODO
             else:
                 raise "Currently only the three losses {{cross-entropy, mse}} are supported, but you provided: {}".format(self.loss)
             return {"loss": np.mean(loss), "num_trees":  self.num_trees(), "num_parameters":self.num_parameters()}, output, 0

@@ -33,8 +33,11 @@ public:
         } else if (loss  == "mse") {
             _loss = mse;
             _loss_deriv = mse_deriv;
+        } else if (loss == "hinge2") {
+            _loss = hinge2;
+            _loss_deriv = hinge2_deriv;
         } else {
-            throw std::runtime_error("Currently only the three losses {cross-entropy, exp, mse} are supported, but you provided: " + loss);
+            throw std::runtime_error("Currently only the three losses {cross-entropy, hinge2, mse} are supported, but you provided: " + loss);
         }
 
         // Yeha this is ugly and there is probably clever way to do this with C++17/20, but this was quicker to code and it gets the job done.

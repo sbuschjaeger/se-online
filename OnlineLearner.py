@@ -176,19 +176,18 @@ class OnlineLearner(ABC):
                         epoch_time / batch_cnt
                     )
                     pbar.set_description(desc)
-
-                    if self.eval_every_items is not None and last_stored > self.eval_every_items and self.eval_every_items > 0:
+                    if self.eval_every_items is not None and last_stored >= self.eval_every_items and self.eval_every_items > 0:
                         out_dict = {}
                         if self.x_test is not None and self.y_test is not None:
                             tmp_dict = self.eval(self.x_test, self.y_test)
                             for key, val in tmp_dict.items():
                                 out_dict["test_" + key] = val
                         
-                        out_dict["item_loss"] = metrics["loss"] / data.shape[0]
-                        out_dict["item_accuracy"] = accuracy / data.shape[0]
-                        out_dict["item_num_trees"] = metrics["num_trees"] / data.shape[0]
-                        out_dict["item_num_parameters"] = metrics["num_parameters"] / data.shape[0]
-                        out_dict["item_time"] = epoch_time / data.shape[0]
+                        out_dict["item_loss"] = metrics["loss"] 
+                        out_dict["item_accuracy"] = accuracy 
+                        out_dict["item_num_trees"] = metrics["num_trees"] 
+                        out_dict["item_num_parameters"] = metrics["num_parameters"] 
+                        out_dict["item_time"] = batch_time / data.shape[0]
                         out_dict["total_model_updates"] = total_model_updates
 
                         out_dict["train_loss"] = epoch_loss/batch_cnt
@@ -211,11 +210,11 @@ class OnlineLearner(ABC):
                         for key, val in tmp_dict.items():
                             out_dict["test_" + key] = val
                     
-                    out_dict["item_loss"] = metrics["loss"] / data.shape[0]
-                    out_dict["item_accuracy"] = accuracy / data.shape[0]
-                    out_dict["item_num_trees"] = metrics["num_trees"] / data.shape[0]
-                    out_dict["item_num_parameters"] = metrics["num_parameters"] / data.shape[0]
-                    out_dict["item_time"] = epoch_time / data.shape[0]
+                    out_dict["item_loss"] = metrics["loss"] 
+                    out_dict["item_accuracy"] = accuracy 
+                    out_dict["item_num_trees"] = metrics["num_trees"] 
+                    out_dict["item_num_parameters"] = metrics["num_parameters"] 
+                    out_dict["item_time"] = batch_time / data.shape[0]
                     out_dict["total_model_updates"] = total_model_updates
 
                     out_dict["train_loss"] = epoch_loss/batch_cnt
