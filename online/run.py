@@ -171,7 +171,7 @@ shared_cfg = {
 }
 
 grad_cfg = {
-    "max_depth":15,
+    "max_depth":20,
     "step_size":5e-1,
     "init_weight":1.0    
 }
@@ -180,9 +180,9 @@ models = []
 
 models.append(
         {
-            "model":SGDEnsemble,
+            "model":BiasedProxEnsemble,
             "max_trees":128,
-            # "l_reg":1e-2,
+            "l_reg":1e-2,
             "init_mode":"train",
             "next_mode":"gradient",
             "is_nominal":is_nominal,

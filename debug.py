@@ -30,6 +30,7 @@ from JaxModel import JaxModel
 from BiasedProxEnsemble import BiasedProxEnsemble
 from SGDEnsemble import SGDEnsemble
 from RiverModel import RiverModel
+from ProxPruningClassifier import ProxPruningClassifier
 
 def pre(cfg):
     model_ctor = cfg.pop("model")
@@ -458,29 +459,41 @@ shared_cfg = {
     "repetitions":n_splits,
     "seed":12345,
     "batch_size":512,
-    "loss":"mse"
+    "loss":"hinge2"
 }
 
 grad_cfg = {
     #"max_depth":5,
-    "step_size":1e-2,
+    "step_size":1e-4,
     "init_weight":1.0
 }
 
 models = []
 
+
 models.append(
     {
-        "model":SGDEnsemble,
-        "max_trees":128,
-        "init_mode":"fully-random",
-        "next_mode":"gradient",
-        "max_depth":10,
-        "is_nominal":is_nominal,
+        "model":ProxPruningClassifier,
+        "l_reg":0,#1e-4,
+        "base_estimator": RandomForestClassifier(bootstrap=True, max_depth=15, n_estimators=256),
+        "n_jobs":1,
         **shared_cfg,
         **grad_cfg
     }
 )
+
+# models.append(
+#     {
+#         "model":SGDEnsemble,
+#         "max_trees":128,
+#         "init_mode":"fully-random",
+#         "next_mode":"gradient",
+#         "max_depth":10,
+#         "is_nominal":is_nominal,
+#         **shared_cfg,
+#         **grad_cfg
+#     }
+# )
 
 # for T in [256]:
 #     models.append(

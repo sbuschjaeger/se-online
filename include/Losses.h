@@ -142,9 +142,9 @@ xt::xarray<data_t> hinge2_deriv(xt::xarray<data_t> const &pred, xt::xarray<data_
     for (unsigned int i = 0; i < pred.shape()[0]; ++i) {
         for (unsigned int j = 0; j < pred.shape()[1]; ++j) {
             if (target(i) == j) {
-                losses_deriv(i,j) = 2 * std::max(1.0 - 1 * pred(i,j), 0.0);
+                losses_deriv(i,j) = - 2 * std::max(1.0 - 1 * pred(i,j), 0.0);
             } else {
-                losses_deriv(i,j) = 2 * std::max(1.0 - (-1 * pred(i,j)), 0.0);
+                losses_deriv(i,j) = - 2 * std::max(1.0 - (-1 * pred(i,j)), 0.0);
             }
         }
     }

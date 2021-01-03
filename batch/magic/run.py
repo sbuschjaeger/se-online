@@ -23,11 +23,10 @@ import river
 from river import tree
 from river.ensemble import AdaptiveRandomForestClassifier
 
-from JaxModel import JaxModel
-
 from experiment_runner.experiment_runner_v2 import run_experiments, get_ctor_arguments
 
-sys.path.append("../")
+from JaxModel import JaxModel
+from ProxPruningClassifier import ProxPruningClassifier
 from BiasedProxEnsemble import BiasedProxEnsemble
 from SGDEnsemble import SGDEnsemble
 from RiverModel import RiverModel
@@ -163,7 +162,7 @@ idx = np.array([(train_idx, test_idx) for train_idx, test_idx in kf.split(X)], d
 
 shared_cfg = {
     "n_updates":5000,
-    "verbose":False,
+    "verbose":True,
     "eval_every_items":4096,
     "eval_every_epochs":1,
     "X":X,
@@ -172,25 +171,36 @@ shared_cfg = {
     "repetitions":n_splits,
     "seed":12345,
     "batch_size":512,
-    "loss":"mse"
+    "loss":"hinge2"
 }
 
 grad_cfg = {
-    #"max_depth":5,
-    "step_size":1e-2,
-    "init_weight":1.0
+    "step_size":1e-4,
+    "init_weight":1.0/256 #1.0/1024.0
 }
 
 models = []
 
+models.append(
+    {
+        "model":ProxPruningClassifier,
+        "l_reg":0,#1e-4,
+        "base_estimator": RandomForestClassifier(bootstrap=True, max_depth=15, n_estimators=256),
+        "n_jobs":1,
+        **shared_cfg,
+        **grad_cfg
+    }
+)
+
+'''
 for T in [256]:
     models.append(
         {
             "model":SGDEnsemble,
             "max_trees":T,
-            "init_mode":"fully-random",
+            "init_mode":"train",
             "next_mode":"gradient",
-            "max_depth":10,
+            "max_depth":15,
             **shared_cfg,
             **grad_cfg
         }
@@ -202,15 +212,15 @@ for l_reg in [1e-2,1e-3,5e-1,5e-2,5e-3]:
                 "model":BiasedProxEnsemble,
                 "max_trees":0,
                 "l_reg":l_reg,
-                "init_mode":"fully-random",
+                "init_mode":"train",
                 "next_mode":"gradient",
-                "max_depth":10,
+                "max_depth":15,
                 **shared_cfg,
                 **grad_cfg
             }
         )
 
-'''
+
 for init_mode in ["train", "fully-random"]:
     for next_mode in ["gradient", "incremental"]:
         for d in [2,5,7,10]:
@@ -286,12 +296,13 @@ for T in [16, 32, 64,128,256]:
         }
     )
 
+
 for T in [16, 32, 64, 128, 256]:
     models.append(
         {
             "model":RandomForestClassifier,
             "bootstrap":True,
-            "max_depth":None,
+            "max_depth":15,
             "n_estimators":T,
             #"max_samples":shared_cfg["batch_size"],
             **shared_cfg,
@@ -302,7 +313,7 @@ for T in [16, 32, 64, 128, 256]:
         {
             "model":ExtraTreesClassifier,
             "bootstrap":True,
-            "max_depth":None,
+            "max_depth":15,
             "n_estimators":T,
             #"max_samples":shared_cfg["batch_size"],
             **shared_cfg,
@@ -315,7 +326,7 @@ for T in [16, 32, 64, 128, 256]:
         {
             "model":GradientBoostingClassifier,
             "n_estimators":T,
-            "max_depth":None,
+            "max_depth":15,
             "loss":"deviance",
             "eval_loss":"cross-entropy",
             **tmp_cfg,
@@ -323,6 +334,7 @@ for T in [16, 32, 64, 128, 256]:
         }
     )
 '''
+
 random.shuffle(models)
 
 run_experiments(basecfg, models)
