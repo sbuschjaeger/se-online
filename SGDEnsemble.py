@@ -21,9 +21,9 @@ class SGDEnsemble(OnlineLearner):
                 *args, **kwargs
                 ):
                         
-        assert loss in ["mse","cross-entropy", "hinge2"], "Currently only {mse, cross-entropy, hinge2} loss is supported"
-        assert init_mode in ["random", "train", "fully-random"], "Currently only {random, train, fully-random} init_mode supported"
-        assert next_mode in ["incremental", "none", "gradient"], "Currently only {incremental, none, gradient} next_mode supported"
+        assert loss in ["mse","cross-entropy"], "Currently only {{mse, cross-entropy}} loss is supported"
+        assert init_mode in ["random", "train", "fully-random"], "Currently only {{random, train, fully-random}} init_mode supported"
+        assert next_mode in ["incremental", "none", "gradient"], "Currently only {{incremental, none, gradient}} next_mode supported"
         assert max_depth >= 1, "max_depth should be at-least 1!"
         assert max_trees >= 0, "max_trees should be at-least 0!"
         
@@ -45,26 +45,25 @@ class SGDEnsemble(OnlineLearner):
 
     def next(self, data, target, train = False, new_epoch = False):
         if train:
-            lsum = self.model.next(data, target)
+            loss = self.model.next(data, target)
             output = self.predict_proba(data)
-            return {"loss": lsum / (data.shape[0] * self.n_classes_), "num_trees": self.model.num_trees(), "num_parameters":self.num_parameters()}, output, 1
+            n_updates = 1
         else:
             output = self.predict_proba(data)
             if self.loss == "mse":
-                # TODO CHANGE HERE
                 target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
-                p = softmax(output, axis=1)
-                loss = (p - target_one_hot) * (p - target_one_hot)
+                loss = (output - target_one_hot) * (output - target_one_hot)
             elif self.loss == "cross-entropy":
                 target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
                 p = softmax(output, axis=1)
                 loss = -target_one_hot*np.log(p + 1e-7)
-            elif self.loss == "hinge2":
-                return 0
-                # TODO
             else:
-                raise "Currently only the three losses {{cross-entropy, mse}} are supported, but you provided: {}".format(self.loss)
-            return {"loss": np.mean(loss), "num_trees":  self.num_trees(), "num_parameters":self.num_parameters()}, output, 0
+                raise "Currently only the losses {{cross-entropy, mse}} are supported, but you provided: {}".format(self.loss)
+                
+            n_updates = 0
+            loss = np.loss(loss)
+
+        return {"loss": loss, "num_trees": self.num_trees(), "num_parameters":self.num_parameters()}, output, n_updates
 
     def num_trees(self):
         return self.model.num_trees()
@@ -84,5 +83,5 @@ class SGDEnsemble(OnlineLearner):
         else:
             is_nominal = self.is_nominal
 
-        self.model = PyBPE.BiasedProxEnsemble(self.max_depth, self.max_trees, n_classes_, self.seed, self.step_size, 0, self.init_weight, is_nominal, self.init_mode, self.next_mode, self.loss)
+        self.model = PyBPE.BiasedProxEnsemble(self.max_depth, self.max_trees, n_classes_, self.seed, self.step_size, 0, self.init_weight, is_nominal, self.init_mode, self.next_mode, self.loss, "none")
         super().fit(X, y, sample_weight)

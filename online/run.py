@@ -29,23 +29,18 @@ from JaxModel import JaxModel
 
 from experiment_runner.experiment_runner_v2 import run_experiments, get_ctor_arguments
 
-sys.path.append("../")
 from BiasedProxEnsemble import BiasedProxEnsemble
 from SGDEnsemble import SGDEnsemble
 from RiverModel import RiverModel
+from PyBiasedProxEnsemble import PyBiasedProxEnsemble
 
 def pre(cfg):
     model_ctor = cfg.pop("model")
-    tmpcfg = cfg
-    expected = {}
-    for key in get_ctor_arguments(model_ctor):
-        if key == "out_file":
-            expected["out_file"] = os.path.join(cfg["out_path"], "training.jsonl")
-        
-        if key in tmpcfg:
-            expected[key] = tmpcfg[key]
-    
-    model = model_ctor(**expected)
+    model_params = cfg["model_params"]
+    if "out_file" in model_params and model_params["out_file"] is not None:
+        model_params["out_file"] = os.path.join(cfg["out_path"], model_params["out_file"])
+
+    model = model_ctor(**model_params)
     return model
 
 def fit(cfg, model):
@@ -158,38 +153,39 @@ nominal_names = [name for nom,name in zip(is_nominal, df.columns.values) if nom 
 scaler = MinMaxScaler()
 X = scaler.fit_transform(df.values.astype(np.float64))
 
-shared_cfg = {
-    "loss":"cross-entropy",
-    "batch_size":32,
-    "epochs":1,
-    "verbose":True,
-    "eval_every_items":32,
-    "eval_every_epochs":1,
+experiment_cfg = {
     "X":X,
     "Y":Y,
-    "seed":12345,
+    "verbose":True,
+    "loss":"cross-entropy",
+    "seed":0
 }
 
-grad_cfg = {
-    "max_depth":20,
-    "step_size":5e-1,
-    "init_weight":1.0    
+online_learner_cfg = {
+    "n_updates":10000,
+    "batch_size":128,
+    "out_file":"training.jsonl"
 }
 
 models = []
 
 models.append(
-        {
-            "model":BiasedProxEnsemble,
-            "max_trees":128,
-            "l_reg":1e-2,
-            "init_mode":"train",
-            "next_mode":"gradient",
-            "is_nominal":is_nominal,
-            **shared_cfg,
-            **grad_cfg
-        }
-    )
+    {
+        "model":PyBiasedProxEnsemble,
+        "model_params": {
+            "loss":experiment_cfg["loss"],
+            "step_size":1e-1,
+            "init_weight":0.0,# / 32,
+            "regularizer":"L1",
+            "max_depth":None,
+            "max_trees":0,
+            "l_reg":0.01,
+            "seed":experiment_cfg["seed"],
+            **online_learner_cfg
+        },
+        **experiment_cfg
+    }
+)
 
 # models.append(
 #     {

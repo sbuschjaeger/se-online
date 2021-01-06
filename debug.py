@@ -459,7 +459,7 @@ shared_cfg = {
     "repetitions":n_splits,
     "seed":12345,
     "batch_size":512,
-    "loss":"hinge2"
+    "loss":"cross-entropy"
 }
 
 grad_cfg = {

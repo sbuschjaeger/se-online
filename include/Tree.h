@@ -179,7 +179,8 @@ private:
      */
     static auto best_split(std::vector<std::vector<data_t>> const &X, std::vector<unsigned int> const &Y, std::vector<bool> const &is_nominal, long n_classes, std::mt19937 &gen) {
         if (X.size() <= 1) {
-            return random_node(is_nominal, gen);
+            return std::make_pair(1.0, static_cast<unsigned int>(0));
+            //return random_node(is_nominal, gen);
         }
 
         unsigned int n_data = X.size();

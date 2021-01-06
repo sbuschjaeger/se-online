@@ -15,7 +15,7 @@ from OnlineLearner import OnlineLearner
 class RiverModel(OnlineLearner):
     def __init__(self, river_model, loss = "cross-entropy", *args, **kwargs):
 
-        assert loss in ["mse","cross-entropy"], "Currently only {mse, cross entropy} loss is supported"
+        assert loss in ["mse","cross-entropy"], "Currently only {{mse, cross-entropy}} loss is supported"
         assert river_model is not None, "river_model was None. This does not work!"
 
         super().__init__(*args, **kwargs)

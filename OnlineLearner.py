@@ -70,7 +70,7 @@ class OnlineLearner(ABC):
         if seed is None:
             self.seed = 1234
         else:
-            self.seed= seed
+            self.seed = seed
 
         np.random.seed(self.seed)
         random.seed(self.seed)

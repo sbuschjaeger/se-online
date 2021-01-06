@@ -351,11 +351,11 @@ int main() {
     unsigned int max_depth = 5;
     unsigned int max_trees = 0;
     unsigned long seed = 12345;
-    data_t step_size = 1e-4;
+    data_t step_size = 1e-2;
     data_t l_reg = 1e-3;
     data_t init_weight = 0.0;
 
-    BiasedProxEnsemble<TREE_INIT::FULLY_RANDOM, TREE_NEXT::GRADIENT, double> est(max_depth, max_trees, n_classes, seed, step_size, l_reg, init_weight, is_nominal, hinge2, hinge2_deriv);
+    BiasedProxEnsemble<TREE_INIT::FULLY_RANDOM, TREE_NEXT::GRADIENT, double> est(max_depth, max_trees, n_classes, seed, step_size, l_reg, init_weight, is_nominal, LOSS::CROSS_ENTROPY, REGULARIZER::L1);
     auto start = std::chrono::steady_clock::now();
 
     for (unsigned int i = 0; i < epochs; ++i) {
