@@ -15,14 +15,15 @@ class PyBiasedProxEnsemble(OnlineLearner):
                 l_reg = 0,  
                 regularizer = "L1",
                 loss = "cross-entropy",
+                normalize_weights = True,
                 init_weight = 0,
                 max_trees = 0,
                 n_jobs = 1,
                 *args, **kwargs
                 ):
 
-        assert loss in ["mse","cross-entropy"], "Currently only {{mse, cross-entropy}} loss is supported"
-        assert regularizer is None or regularizer in ["none","L0", "L1", "prob"], "Currently only {{none, L0, L1, prob}} regularizer is supported"
+        assert loss in ["mse","cross-entropy","hinge2"], "Currently only {{mse, cross-entropy, hinge2}} loss is supported"
+        assert regularizer is None or regularizer in ["none","L0", "L1"], "Currently only {{none, L0, L1}} regularizer is supported"
         
         super().__init__(*args, **kwargs)
 
@@ -30,7 +31,7 @@ class PyBiasedProxEnsemble(OnlineLearner):
             print("WARNING: You set l_reg to {}, but regularizer is None. Ignoring l_reg!".format(l_reg))
             l_reg = 0
 
-        if (l_reg == 0 and (regularizer != "none" and regularizer is not None and regularizer != "prob")):
+        if (l_reg == 0 and (regularizer != "none" and regularizer is not None)):
             print("WARNING: You set l_reg to 0, but choose regularizer {}.".format(regularizer))
         
         self.step_size = step_size
@@ -38,6 +39,7 @@ class PyBiasedProxEnsemble(OnlineLearner):
         self.init_weight = init_weight
         self.l_reg = l_reg
         self.regularizer = regularizer
+        self.normalize_weights = normalize_weights
         self.max_depth = max_depth
         self.max_trees = max_trees
         self.n_jobs = n_jobs
@@ -68,10 +70,20 @@ class PyBiasedProxEnsemble(OnlineLearner):
 
     def next(self, data, target, train = False, new_epoch = False):
         if self.max_trees == 0 or len(self.estimators_) < self.max_trees:
-            tree = DecisionTreeClassifier(max_depth = self.max_depth, random_state=self._seed) #, max_features=1)
+            # if self.max_depth is None:
+            #     # TODO better upper value
+            #     d = np.random.randint(low=1,high=15,size=1)
+            # else:
+            #     d = np.random.randint(low=1,high=self.max_depth+1,size=1)
+            d = self.max_depth
+            tree = DecisionTreeClassifier(max_depth = d, random_state=self._seed) #, max_features=1)
             tree.fit(data, target)
 
-            self.estimator_weights_.append(self.init_weight)
+            if len(self.estimator_weights_) == 0:
+                self.estimator_weights_.append(self.init_weight)
+            else:
+                #self.estimator_weights_.append(max(self.estimator_weights_))
+                self.estimator_weights_.append(sum(self.estimator_weights_)/len(self.estimator_weights_))
             self.estimators_.append(tree)
             self._seed += 1
 
@@ -89,6 +101,11 @@ class PyBiasedProxEnsemble(OnlineLearner):
             m = target.shape[0]
             loss_deriv = softmax(output, axis=1)
             loss_deriv[range(m),target_one_hot.argmax(axis=1)] -= 1
+        elif self.loss == "hinge2":
+            target_one_hot = np.array( [ [1.0 if y == i else -1.0 for i in range(self.n_classes_)] for y in target] )
+            zeros = np.zeros_like(target_one_hot)
+            loss = np.maximum(1.0 - target_one_hot * output, zeros)**2
+            loss_deriv = - 2 * np.maximum(1.0 - target_one_hot * output, zeros)
         else:
             raise "Currently only the losses {{cross-entropy, mse}} are supported, but you provided: {}".format(self.loss)
         
@@ -110,7 +127,10 @@ class PyBiasedProxEnsemble(OnlineLearner):
                 sign = np.sign(tmp_w)
                 tmp_w = np.abs(tmp_w) - self.step_size*self.l_reg
                 self.estimator_weights_ = sign*np.maximum(tmp_w,0)
-            elif self.regularizer == "prob":
+            else:
+                self.estimator_weights_ = tmp_w
+
+            if self.normalize_weights:
                 sorted_w = sorted(tmp_w, reverse=False)
                 w_sum = sorted_w[0]
                 l = 1.0 - sorted_w[0]
@@ -123,9 +143,7 @@ class PyBiasedProxEnsemble(OnlineLearner):
                 self.estimator_weights_ = [max(w + l, 0.0) for w in tmp_w]
                 # print("AFTER PROB:", sum(self.estimator_weights_))
                 # print("AFTER PROB:", self.estimator_weights_)
-            else:
-                self.estimator_weights_ = tmp_w
-
+            
             new_est = []
             new_w = []
             for h, w in zip(self.estimators_, self.estimator_weights_):
@@ -135,13 +153,8 @@ class PyBiasedProxEnsemble(OnlineLearner):
                     new_est.append(h)
                     new_w.append(w)
 
-            # new_w = [max(w,1.0/len(new_w)) for w in new_w]
-
             self.estimators_ = new_est
             self.estimator_weights_ = new_w
-            # if len(self.estimator_weights_) > 0:
-            #     # TODO THIS IS SUPER BRUTAL!
-            #     self.estimator_weights_ = list(self.estimator_weights_ / np.sum(self.estimator_weights_))
 
             n_updates = 1
         else:
@@ -153,8 +166,7 @@ class PyBiasedProxEnsemble(OnlineLearner):
         return np.count_nonzero(self.estimator_weights_)
 
     def num_parameters(self):
-        # TODO THIS IS NOT REALLY MEANINGFUL
-        return np.count_nonzero(self.estimator_weights_)
+        return sum( [ est.tree_.node_count if w != 0 else 0 for w, est in zip(self.estimator_weights_, self.estimators_)] )
 
     def fit(self, X, y, sample_weight = None):
         super().fit(X, y, sample_weight)

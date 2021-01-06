@@ -13,8 +13,8 @@ from scipy.special import softmax
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import ExtraTreesClassifier
-from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.ensemble import AdaBoostClassifier
+from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.tree import DecisionTreeClassifier
 
 # from sklearn.metrics import make_scorer, accuracy_score
@@ -106,6 +106,10 @@ def post(cfg, model):
             target_one_hot = np.array( [ [1 if y == i else 0 for i in range(model.n_classes_)] for y in target] )
             p = softmax(pred, axis=1)
             loss = -target_one_hot*np.log(p + 1e-7)
+        elif loss_type == "hinge2":
+            target_one_hot = np.array( [ [1.0 if y == i else -1.0 for i in range(model.n_classes_)] for y in target] )
+            zeros = np.zeros_like(target_one_hot)
+            loss = np.maximum(1.0 - target_one_hot * pred, zeros)**2
         else:
             raise "Wrong loss given. Loss was {} but expected {{mse, cross-entropy}}".format(loss_type)
         return np.mean(loss)
@@ -125,9 +129,9 @@ def post(cfg, model):
             # TODO Add inner nodes
             if isinstance(model, GradientBoostingClassifier):
                 for ei in est:
-                    n_parameters += model.n_classes_ * ei.tree_.node_count
+                    n_parameters += ei.tree_.node_count
             else:
-                n_parameters += model.n_classes_ * est.tree_.node_count
+                n_parameters += est.tree_.node_count
 
         scores["n_parameters"] = n_parameters
     else:
@@ -193,49 +197,98 @@ experiment_cfg = {
 }
 
 online_learner_cfg = {
-    "n_updates":5000,
+    "n_updates":10000,
     "eval_every_items":4096,
     "eval_every_epochs":1,
-    "batch_size":512,
+    "batch_size":1024,
     "out_file":"training.jsonl"
 }
 
 models = []
 
-models.append(
-    {
-        "model":RandomForestClassifier,
-        "model_params": {
-            "bootstrap":True,
-            "max_depth":None,
-            "n_estimators":64,
-            "max_samples":online_learner_cfg["batch_size"],
-            "random_state":experiment_cfg["seed"],
-            "verbose":experiment_cfg["verbose"]
-        },
-        **experiment_cfg
-        #**shared_cfg
-        #**grad_cfg
-    }
-)
+# models.append(
+#     {
+#         "model":PyBiasedProxEnsemble,
+#         "model_params": {
+#             "loss":experiment_cfg["loss"],
+#             "max_depth":None,
+#             "step_size":1e-2,
+#             "init_weight":1.0,
+#             "l_reg":0.0,
+#             "regularizer":"none",
+#             "normalize_weights":True,
+#             "seed":experiment_cfg["seed"],
+#             **online_learner_cfg
+#         },
+#         **experiment_cfg
+#     }
+# )
 
 models.append(
     {
-        "model":PyBiasedProxEnsemble,
+        "model":ProxPruningClassifier,
         "model_params": {
+            "base_estimator":RandomForestClassifier(n_estimators = 128, max_depth=None, random_state=experiment_cfg["seed"]),
             "loss":experiment_cfg["loss"],
-            "step_size":2e-2,
-            "init_weight":0.0,# / 32,
-            "regularizer":"prob",
-            "max_depth":None,
-            "max_trees":0,
-            "l_reg":0.0,
+            "step_size":1e-2,
+            "init_weight":1.0/128,
+            "l_reg":1.0,
+            "regularizer":"L1",
+            "normalize_weights":True,
             "seed":experiment_cfg["seed"],
             **online_learner_cfg
         },
         **experiment_cfg
     }
 )
+
+# for T in [128,256,512,1024]:
+#     models.append(
+#         {
+#             "model":RandomForestClassifier,
+#             "model_params": {
+#                 "n_estimators":T,
+#                 "max_depth":None, 
+#                 "random_state":experiment_cfg["seed"]
+#             },
+#             **experiment_cfg
+#         }
+#     )
+
+# models.append(
+#     {
+#         "model":RandomForestClassifier,
+#         "model_params": {
+#             "bootstrap":True,
+#             "max_depth":None,
+#             "n_estimators":64,
+#             "max_samples":online_learner_cfg["batch_size"],
+#             "random_state":experiment_cfg["seed"],
+#             "verbose":experiment_cfg["verbose"]
+#         },
+#         **experiment_cfg
+#         #**shared_cfg
+#         #**grad_cfg
+#     }
+# )
+
+# models.append(
+#     {
+#         "model":PyBiasedProxEnsemble,
+#         "model_params": {
+#             "loss":experiment_cfg["loss"],
+#             "step_size":2e-2,
+#             "init_weight":0.0,# / 32,
+#             "regularizer":"prob",
+#             "max_depth":None,
+#             "max_trees":0,
+#             "l_reg":0.0,
+#             "seed":experiment_cfg["seed"],
+#             **online_learner_cfg
+#         },
+#         **experiment_cfg
+#     }
+# )
 
 # models.append(
 #     {
