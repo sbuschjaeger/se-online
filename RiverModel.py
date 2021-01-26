@@ -1,6 +1,7 @@
 import numpy as np
 import random
 import copy
+from numpy.core.fromnumeric import argsort
 from tqdm import tqdm
 
 from sklearn.base import BaseEstimator, ClassifierMixin
@@ -17,8 +18,24 @@ class RiverModel(OnlineLearner):
 
         assert loss in ["mse","cross-entropy"], "Currently only {{mse, cross-entropy}} loss is supported"
         assert river_model is not None, "river_model was None. This does not work!"
+        
+        if "sliding_window" in args and args["sliding_window"] == False:
+            print("WARNING: sliding_window should be True for RiverModel, but it was set to False. Fixing it for you.")
+            args["sliding_window"] = True
+        
+        if "sliding_window" in kwargs and kwargs["sliding_window"] == False:
+            print("WARNING: sliding_window should be True for RiverModel, but it was set to False. Fixing it for you.")
+            kwargs["sliding_window"] = True
 
-        super().__init__(*args, **kwargs)
+        if "batch_size" in args and args["batch_size"] > 1:
+            print("WARNING: batch_size should be 1 for RiverModel for optimal performance, but was {}. Fixing it for you.".format(args["batch_size"]))
+            args.pop("batch_size")
+
+        if "batch_size" in kwargs and kwargs["batch_size"] > 1:
+            print("WARNING: batch_size should be 1 for RiverModel for optimal performance, but was {}. Fixing it for you.".format(kwargs["batch_size"]))
+            kwargs.pop("batch_size")
+
+        super().__init__(batch_size = 1, *args, **kwargs)
 
         self.model = copy.deepcopy(river_model)
         self.loss = loss
@@ -37,11 +54,8 @@ class RiverModel(OnlineLearner):
 
     def predict_proba(self, X):
         proba = []
-        if (len(X) == 1):
-            proba.append(self.predict_proba_one(X))
-        else:
-            for x in X:
-                proba.append(self.predict_proba_one(x))
+        for x in X:
+            proba.append(self.predict_proba_one(x))
         return np.array(proba)
 
     def num_trees(self):
@@ -66,23 +80,15 @@ class RiverModel(OnlineLearner):
         losses = []
         output = []
         for x, y in zip(data, target):
+            pred = self.predict_proba_one(x)
+            
             if train:
                 x_dict = {}
                 for i, xi in enumerate(x):
                     x_dict["att_" + str(i)] = xi
                 self.model.learn_one(x_dict, y)
 
-            pred = self.predict_proba_one(x)
-            
-            if self.loss == "mse":
-                target_one_hot = np.array( [1.0 if y == i else 0.0 for i in range(self.n_classes_)] )
-                loss = (pred - target_one_hot) * (pred - target_one_hot)
-            elif self.loss == "cross-entropy":
-                target_one_hot = np.array( [1.0 if y == i else 0.0 for i in range(self.n_classes_)] )
-                p = softmax(pred)
-                loss = -target_one_hot*np.log(p)
-            
-            losses.append(loss)
             output.append(pred)
+        losses.append(self.loss_(np.array(output), target))
         
-        return {"loss": np.mean(loss), "num_trees": self.num_trees(), "num_parameters":self.num_parameters()}, np.array(output), data.shape[0]
+        return {"loss": np.mean(losses), "num_trees": self.num_trees(), "num_parameters":self.num_parameters()}, np.array(output), data.shape[0]

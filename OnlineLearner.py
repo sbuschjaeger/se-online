@@ -23,7 +23,7 @@ from scipy.special import softmax
 from abc import ABC, abstractmethod
 
 # Modified from https://stackoverflow.com/questions/38157972/how-to-implement-mini-batch-gradient-descent-in-python
-def create_mini_batches(inputs, targets, batch_size, shuffle=False):
+def create_mini_batches(inputs, targets, batch_size, shuffle=False, sliding_window=False):
     assert inputs.shape[0] == targets.shape[0]
     indices = np.arange(inputs.shape[0])
     if shuffle:
@@ -35,12 +35,19 @@ def create_mini_batches(inputs, targets, batch_size, shuffle=False):
             excerpt = indices[start_idx:]
         else:
             excerpt = indices[start_idx:start_idx + batch_size]
-        start_idx += batch_size
+        
+        if sliding_window:
+            start_idx += 1
+        else:
+            start_idx += batch_size
+
         yield inputs[excerpt], targets[excerpt]
 
 class OnlineLearner(ABC):
     def __init__(self,  
+                eval_loss = "cross-entropy",
                 batch_size = 256,
+                sliding_window = False,
                 epochs = None,
                 n_updates = None,
                 seed = None,
@@ -52,11 +59,14 @@ class OnlineLearner(ABC):
                 eval_every_items = None,
                 eval_every_epochs = None):
         
+        assert eval_loss in ["mse","cross-entropy","hinge2"], "Currently only {{mse, cross-entropy, hinge2}} loss is supported"
         assert n_updates is None or n_updates >= 1, "n_updates must be either None or a >= 1"
         assert epochs is None or epochs >= 1, "epochs must be either None or a >= 1"
         assert epochs is not None or n_updates is not None, "n_updates and epochs cannot both be None"
 
+        self.eval_loss = eval_loss
         self.batch_size = batch_size
+        self.sliding_window = sliding_window
         self.epochs = epochs
         self.n_updates = n_updates
         self.verbose = verbose
@@ -82,6 +92,30 @@ class OnlineLearner(ABC):
     @abstractmethod
     def next(self, data, target, train=False, new_epoch = False):
         pass
+    
+    @abstractmethod
+    def num_trees(self):
+        pass
+    
+    @abstractmethod
+    def num_parameters(self):
+        pass
+
+    def loss_(self, output, target):
+        if self.eval_loss == "mse":
+            target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
+            loss = (output - target_one_hot) * (output - target_one_hot)
+        elif self.eval_loss == "cross-entropy":
+            target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
+            p = softmax(output, axis=1)
+            loss = -target_one_hot*np.log(p + 1e-7)
+        elif self.eval_loss == "hinge2":
+            target_one_hot = np.array( [ [1.0 if y == i else -1.0 for i in range(self.n_classes_)] for y in target] )
+            zeros = np.zeros_like(target_one_hot)
+            loss = np.maximum(1.0 - target_one_hot * output, zeros)**2
+        else:
+            raise "Currently only the losses {{cross-entropy, mse, hinge2}} are supported, but you provided: {}".format(self.eval_loss)
+        return loss
 
     def eval(self, X, y):
         test_batches = create_mini_batches(X, y, self.batch_size, True) 
@@ -122,7 +156,7 @@ class OnlineLearner(ABC):
         total_item_cnt = 0
         total_model_updates = 0
         for epoch in range(self.epochs):
-            mini_batches = create_mini_batches(self.X_, self.y_, self.batch_size, self.shuffle) 
+            mini_batches = create_mini_batches(self.X_, self.y_, self.batch_size, self.shuffle,self.sliding_window) 
             epoch_loss = 0
             batch_cnt = 0
             avg_accuarcy = 0
@@ -133,7 +167,10 @@ class OnlineLearner(ABC):
 
             first_batch = epoch > 0 
             if self.n_updates is not None:
-                tqdm_total = int(min(self.n_updates - total_model_updates, X.shape[0] / self.batch_size))
+                if self.sliding_window:
+                    tqdm_total = int(min(self.n_updates - total_model_updates, X.shape[0]))
+                else:
+                    tqdm_total = int(min(self.n_updates - total_model_updates, X.shape[0] / self.batch_size))
             else:
                 tqdm_total = X.shape[0]
             #print("tqdm_total:", tqdm_total)
@@ -143,19 +180,31 @@ class OnlineLearner(ABC):
                     if self.n_updates is not None and self.n_updates < total_model_updates:
                         break
                     data, target = batch 
+                    
+                    # Compute current statistics
+                    if self.sliding_window:
+                        output = self.predict_proba(data[-1].reshape(1,data.shape[1]))
+                        loss = self.loss_(output, [target[-1]]).mean()
+                        accuracy = accuracy_score([target[-1]], output.argmax(axis=1))*100.0
+                    else:
+                        output = self.predict_proba(data)
+                        loss = self.loss_(output, target).mean()
+                        accuracy = accuracy_score(target, output.argmax(axis=1))*100.0
+                    num_trees = self.num_trees() 
+                    num_params = self.num_parameters() 
 
+                    # Update Model                    
                     start_time = time.time()
-                    metrics, output, updates = self.next(data, target, train = True, new_epoch = first_batch)
+                    _, _, updates = self.next(data, target, train = True, new_epoch = first_batch)
                     batch_time = time.time() - start_time
+
+                    # Update running statistics
                     epoch_time += 1000 * batch_time / data.shape[0]
                     first_batch = False
-
                     total_model_updates += updates
-                    epoch_loss += metrics["loss"]
-                    n_trees += metrics["num_trees"] 
-                    n_params += metrics["num_parameters"] 
-
-                    accuracy = accuracy_score(target, output.argmax(axis=1))*100.0
+                    n_trees += num_trees
+                    n_params += num_params
+                    epoch_loss += loss
                     avg_accuarcy += accuracy
                     batch_cnt += 1
                     total_item_cnt += data.shape[0]
@@ -164,7 +213,10 @@ class OnlineLearner(ABC):
                     if self.n_updates is not None:
                         pbar.update(updates)
                     else:
-                        pbar.update(data.shape[0])
+                        if self.sliding_window:
+                            pbar.update(1)
+                        else:
+                            pbar.update(data.shape[0])
 
                     desc = '[{}/{}] loss {:2.4f} acc {:2.4f} n_trees {:2.4f} n_params {:2.4f} time_item {:2.4f}'.format(
                         epoch, 
@@ -183,10 +235,10 @@ class OnlineLearner(ABC):
                             for key, val in tmp_dict.items():
                                 out_dict["test_" + key] = val
                         
-                        out_dict["item_loss"] = metrics["loss"] 
+                        out_dict["item_loss"] = loss
                         out_dict["item_accuracy"] = accuracy 
-                        out_dict["item_num_trees"] = metrics["num_trees"] 
-                        out_dict["item_num_parameters"] = metrics["num_parameters"] 
+                        out_dict["item_num_trees"] = num_trees
+                        out_dict["item_num_parameters"] = num_params
                         out_dict["item_time"] = batch_time / data.shape[0]
                         out_dict["total_model_updates"] = total_model_updates
 
@@ -210,11 +262,11 @@ class OnlineLearner(ABC):
                         for key, val in tmp_dict.items():
                             out_dict["test_" + key] = val
                     
-                    out_dict["item_loss"] = metrics["loss"] 
-                    out_dict["item_accuracy"] = accuracy 
-                    out_dict["item_num_trees"] = metrics["num_trees"] 
-                    out_dict["item_num_parameters"] = metrics["num_parameters"] 
-                    out_dict["item_time"] = batch_time / data.shape[0]
+                    # out_dict["item_loss"] = loss
+                    # out_dict["item_accuracy"] = accuracy 
+                    # out_dict["item_num_trees"] = num_trees 
+                    # out_dict["item_num_parameters"] = num_params 
+                    # out_dict["item_time"] = batch_time / data.shape[0]
                     out_dict["total_model_updates"] = total_model_updates
 
                     out_dict["train_loss"] = epoch_loss/batch_cnt

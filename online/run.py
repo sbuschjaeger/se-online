@@ -95,18 +95,18 @@ def post(cfg, model):
     # return scores
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-l", "--local", help="Run on local machine",action="store_true", default=False)
+parser.add_argument("-s", "--single", help="Run via single thread",action="store_true", default=False)
 parser.add_argument("-r", "--ray", help="Run via Ray",action="store_true", default=False)
 parser.add_argument("-m", "--multi", help="Run via multiprocessing pool",action="store_true", default=False)
 parser.add_argument("--ray_head", help="Run via Ray",action="store_true", default="auto")
 parser.add_argument("--redis_password", help="Run via Ray",action="store_true", default="5241590000000000")
 args = parser.parse_args()
 
-if not args.local and not args.ray and not args.multi:
-    print("No processing mode found, defaulting to `local` processing.")
-    args.local = True
+if not args.single and not args.ray and not args.multi:
+    print("No processing mode found, defaulting to `single` processing.")
+    args.single = True
 
-if args.local:
+if args.single:
     basecfg = {
         "out_path":"results/" + datetime.now().strftime('%d-%m-%Y-%H:%M:%S'),
         "pre": pre,
@@ -130,6 +130,8 @@ else:
 
 print("LOADING DATA")
 data, meta = loadarff("agrawal_a.arff")
+#data, meta = loadarff("agrawal_debug.arff")
+
 Xdict = {}
 for cname, ctype in zip(meta.names(), meta.types()):
     if cname == "class":
@@ -157,54 +159,66 @@ experiment_cfg = {
     "X":X,
     "Y":Y,
     "verbose":True,
-    "loss":"cross-entropy",
+    "eval_loss":"cross-entropy",
     "seed":0
 }
 
 online_learner_cfg = {
     "n_updates":10000,
     "batch_size":128,
-    "out_file":"training.jsonl"
+    "out_file":"training.jsonl",
+    "sliding_window":True,
+    "verbose":args.single,
+    "shuffle":False
 }
 
 models = []
 
+for T in [16, 32, 64, 128, 256]:
+    models.append(
+        {
+            "model":PyBiasedProxEnsemble,
+            "model_params": {
+                "loss":"cross-entropy",
+                "step_size":1e-2, #1e-3,
+                "ensemble_regularizer":"hard-L1",
+                "l_ensemble_reg":T,
+                "tree_regularizer":None,
+                "l_tree_reg":0,
+                "normalize_weights":True,
+                "init_weight":"average",
+                "max_depth":None,
+                "scale_batch":0,
+                "var_batch":0.001,
+                "seed":experiment_cfg["seed"],
+                **online_learner_cfg
+            },
+            **experiment_cfg
+        }
+    )
+
+
 models.append(
     {
-        "model":PyBiasedProxEnsemble,
+        "model":RiverModel,
         "model_params": {
-            "loss":experiment_cfg["loss"],
-            "step_size":1e-1,
-            "init_weight":0.0,# / 32,
-            "regularizer":"L1",
-            "max_depth":None,
-            "max_trees":0,
-            "l_reg":0.01,
-            "seed":experiment_cfg["seed"],
+            "river_model":river.ensemble.SRPClassifier(
+                n_models = 25,
+                model = river.tree.HoeffdingTreeClassifier(
+                    grace_period = 50,
+                    #split_confidence = 1e-6,
+                    split_confidence = 0.01,
+                    #min_samples_reevaluate = 300,
+                    leaf_prediction = "mc",
+                    nominal_attributes = nominal_names,
+                    max_depth=35
+                ),
+            ),
             **online_learner_cfg
         },
         **experiment_cfg
     }
 )
-
-# models.append(
-#     {
-#         "model":RiverModel,
-#         "river_model":river.ensemble.SRPClassifier(
-#             n_models = 10,
-#             model = river.tree.HoeffdingTreeClassifier(
-#                 grace_period = 50,
-#                 #split_confidence = 1e-6,
-#                 split_confidence = 0.01,
-#                 #min_samples_reevaluate = 300,
-#                 leaf_prediction = "mc",
-#                 nominal_attributes = nominal_names,
-#                 max_depth=35
-#             ),
-#         ),
-#         **shared_cfg
-#     }
-# )
 
 # for d in [3,5,10,12,15]:
 #     models.append(

@@ -44,31 +44,11 @@ def pre(cfg):
         i = cfg["run_id"]
         itrain, _ = cfg["idx"][i]
         X, Y = cfg["X"],cfg["Y"]
-        base.fit(X, Y)
+        base.fit(X[itrain], Y[itrain])
         model_params["estimators"] = base.estimators_
 
     model = model_ctor(**model_params)
         
-    # tmpcfg = cfg
-    # expected = {}
-    # for key in get_ctor_arguments(model_ctor):
-    #     if key == "out_file":
-    #         expected["out_file"] = os.path.join(cfg["out_path"], "training.jsonl")
-        # elif key == "x_test":
-        #     X = cfg["X"]
-        #     i = cfg["run_id"]
-        #     _, itest = cfg["idx"][i]
-        #     expected["x_test"] = X[itest]
-        # elif key == "y_test":
-        #     Y = cfg["Y"]
-        #     i = cfg["run_id"]
-        #     _, itest = cfg["idx"][i]
-        #     expected["y_test"] = Y[itest]
-        
-    #     if key in tmpcfg:
-    #         expected[key] = tmpcfg[key]
-    
-    # model = model_ctor(**expected)
     return model
 
 def fit(cfg, model):
@@ -77,20 +57,6 @@ def fit(cfg, model):
     X, Y = cfg["X"],cfg["Y"]
 
     model.fit(X[itrain], Y[itrain])
-
-    # if (isinstance(model, RandomForestClassifier)):
-    #     model_ctor = PyBiasedProxEnsemble
-    #     tmpcfg = cfg
-    #     expected = {}
-    #     for key in get_ctor_arguments(model_ctor):
-    #         if key == "out_file":
-    #             expected["out_file"] = os.path.join(cfg["out_path"], "training.jsonl")
-    #         if key in tmpcfg:
-    #             expected[key] = tmpcfg[key]
-        
-    #     tmp_model = model_ctor(**expected)
-    #     tmp_model.fit(X[itrain], Y[itrain])
-    #     model.estimators_ = tmp_model.estimators_
 
     return model
 
@@ -119,7 +85,7 @@ def post(cfg, model):
             zeros = np.zeros_like(target_one_hot)
             loss = np.maximum(1.0 - target_one_hot * pred, zeros)**2
         else:
-            raise "Wrong loss given. Loss was {} but expected {{mse, cross-entropy}}".format(loss_type)
+            raise "Wrong loss given. Loss was {} but expected {{mse, cross-entropy, hinge2}}".format(loss_type)
         return np.mean(loss)
 
     test_output = model.predict_proba(X[itest])
@@ -130,11 +96,10 @@ def post(cfg, model):
     scores["train_accuracy"] = accuracy_score(Y[itrain], train_output.argmax(axis=1))*100.0
     scores["train_loss"] = _loss(train_output, Y[itrain])
 
-    if isinstance(model, (GradientBoostingClassifier, RandomForestClassifier, ExtraTreesClassifier, AdaBoostClassifier, PyBiasedProxEnsemble)):
+    if isinstance(model, (GradientBoostingClassifier, RandomForestClassifier, ExtraTreesClassifier, AdaBoostClassifier)):
         scores["n_estimators"] = len(model.estimators_)
         n_parameters = 0
         for est in model.estimators_:
-            # TODO Add inner nodes
             if isinstance(model, GradientBoostingClassifier):
                 for ei in est:
                     n_parameters += ei.tree_.node_count
@@ -149,7 +114,7 @@ def post(cfg, model):
     return scores
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-s", "--single", help="Run via single thread",action="store_true", default=False)
+parser.add_argument("-l", "--single", help="Run via single thread",action="store_true", default=False)
 parser.add_argument("-r", "--ray", help="Run via Ray",action="store_true", default=False)
 parser.add_argument("-m", "--multi", help="Run via multiprocessing pool",action="store_true", default=False)
 parser.add_argument("--ray_head", help="Run via Ray",action="store_true", default="auto")
@@ -166,7 +131,7 @@ if args.single:
         "pre": pre,
         "post": post,
         "fit": fit,
-        "backend": "local",
+        "backend": "single",
         "verbose":True
     }
 elif args.multi:
@@ -199,87 +164,93 @@ experiment_cfg = {
     "Y":Y,
     "idx":idx,
     "repetitions":n_splits,
-    "loss":"mse",
+    "loss":"cross-entropy",
     "seed":0
 }
 
 online_learner_cfg = {
     "verbose":args.single,
-    "n_updates":1000,
+    "epochs":10,
     "eval_every_items":4096,
     "eval_every_epochs":1,
-    "batch_size":4096,
+    "batch_size":128,
     "out_file":"training.jsonl"
 }
 
 models = []
 
-for T in [16, 32, 64, 128, 256]:
+for T in [32, 64, 128, 256]:
     models.append(
         {
-            "model":PyBiasedProxEnsemble,
+            "model":ProxPruningClassifier,
             "model_params": {
                 "loss":experiment_cfg["loss"],
-                "step_size":1e-2, #1e-3,
-                "ensemble_regularizer":"hard-L1",
+                "step_size":1e-1, #1e-3,
+                "init_weight":0.0,
                 "l_ensemble_reg":T,
-                "tree_regularizer":None,
+                "ensemble_regularizer":"hard-L1",
                 "l_tree_reg":0,
+                "tree_regularizer":None,
                 "normalize_weights":True,
-                "init_weight":"average",
-                "max_depth":None,
-                "scale_batch":0,
-                "var_batch":0.001,
                 "seed":experiment_cfg["seed"],
-                "sliding_window":False,
                 **online_learner_cfg
             },
+            "base_ensemble":RandomForestClassifier(n_estimators = 1024, max_depth=None, random_state=experiment_cfg["seed"]),
             **experiment_cfg
         }
     )
 
     models.append(
         {
+            "model":ProxPruningClassifier,
+            "model_params": {
+                "loss":experiment_cfg["loss"],
+                "step_size":1e-1, #1e-3,
+                "init_weight":0.0,
+                "l_ensemble_reg":T,
+                "ensemble_regularizer":"hard-L1",
+                "l_tree_reg":1e-4,
+                "tree_regularizer":"node",
+                "normalize_weights":True,
+                "seed":experiment_cfg["seed"],
+                **online_learner_cfg
+            },
+            "base_ensemble":RandomForestClassifier(n_estimators = 1024, max_depth=None, random_state=experiment_cfg["seed"]),
+            **experiment_cfg
+        }
+    )
+
+models.append(
+    {
+        "model":ProxPruningClassifier,
+        "model_params": {
+            "loss":experiment_cfg["loss"],
+            "step_size":1e-1, #1e-3,
+            "init_weight":0.0,
+            "ensemble_regularizer":None,
+            "tree_regularizer":None,
+            "normalize_weights":False,
+            "seed":experiment_cfg["seed"],
+            **online_learner_cfg
+        },
+        "base_ensemble":RandomForestClassifier(n_estimators = 1024, max_depth=None, random_state=experiment_cfg["seed"]),
+        **experiment_cfg
+    }
+)
+
+for T in [32, 64, 128, 1024]:
+    models.append(
+        {
             "model":RandomForestClassifier,
             "model_params": {
-                "bootstrap":True,
-                "max_depth":None,
                 "n_estimators":T,
-                #"max_samples":shared_cfg["batch_size"],
+                "max_depth":None, 
+                "random_state":experiment_cfg["seed"]
             },
-            **experiment_cfg,
+            **experiment_cfg
         }
     )
 
-    models.append(
-        {
-            "model":ExtraTreesClassifier,
-            "model_params": {
-                "bootstrap":True,
-                "max_depth":None,
-                "n_estimators":T,
-                #"max_samples":shared_cfg["batch_size"],
-            },
-            **experiment_cfg,
-        }
-    )
-
-    tmp_cfg = experiment_cfg.copy()
-    tmp_cfg.pop("loss")
-    models.append(
-        {
-            "model":GradientBoostingClassifier,
-            "model_params": {
-                "n_estimators":T,
-                "max_depth":15,
-                "loss":"deviance",
-            },
-            "eval_loss":"cross-entropy",
-            **tmp_cfg
-            #"subsample":int(shared_cfg["batch_size"]) / min([len(i[0]) for i in idx])
-        }
-    )
-
-# random.shuffle(models)
+random.shuffle(models)
 
 run_experiments(basecfg, models)
