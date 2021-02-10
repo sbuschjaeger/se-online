@@ -49,7 +49,6 @@ class OnlineLearner(ABC):
                 batch_size = 256,
                 sliding_window = False,
                 epochs = None,
-                n_updates = None,
                 seed = None,
                 verbose = True, 
                 shuffle = True,
@@ -60,15 +59,12 @@ class OnlineLearner(ABC):
                 eval_every_epochs = None):
         
         assert eval_loss in ["mse","cross-entropy","hinge2"], "Currently only {{mse, cross-entropy, hinge2}} loss is supported"
-        assert n_updates is None or n_updates >= 1, "n_updates must be either None or a >= 1"
-        assert epochs is None or epochs >= 1, "epochs must be either None or a >= 1"
-        assert epochs is not None or n_updates is not None, "n_updates and epochs cannot both be None"
+        assert epochs >= 1, "epochs must be at-least 1"
 
         self.eval_loss = eval_loss
         self.batch_size = batch_size
         self.sliding_window = sliding_window
         self.epochs = epochs
-        self.n_updates = n_updates
         self.verbose = verbose
         self.shuffle = shuffle
         self.x_test = x_test
@@ -84,10 +80,6 @@ class OnlineLearner(ABC):
 
         np.random.seed(self.seed)
         random.seed(self.seed)
-
-        if self.n_updates is not None and self.epochs is not None:
-            print("WARNING: n_updates and epochs are both not None. Please pick one. I am picking epochs for you now")
-            self.n_updates = None
 
     @abstractmethod
     def next(self, data, target, train=False, new_epoch = False):
@@ -167,18 +159,9 @@ class OnlineLearner(ABC):
 
             new_epoch = epoch > 0 
             first_batch = True
-            if self.n_updates is not None:
-                if self.sliding_window:
-                    tqdm_total = int(min(self.n_updates - total_model_updates, X.shape[0]))
-                else:
-                    tqdm_total = int(min(self.n_updates - total_model_updates, X.shape[0] / self.batch_size))
-            else:
-                tqdm_total = X.shape[0]
 
-            with tqdm(total=tqdm_total, ncols=135, disable = not self.verbose) as pbar:
+            with tqdm(total=X.shape[0], ncols=135, disable = not self.verbose) as pbar:
                 for batch in mini_batches: 
-                    if self.n_updates is not None and self.n_updates < total_model_updates:
-                        break
                     data, target = batch 
                     
                     # Compute current statistics
@@ -212,13 +195,10 @@ class OnlineLearner(ABC):
                     total_item_cnt += cur_batch_size
                     last_stored += cur_batch_size
 
-                    if self.n_updates is not None:
-                        pbar.update(updates)
+                    if self.sliding_window:
+                        pbar.update(1)
                     else:
-                        if self.sliding_window:
-                            pbar.update(1)
-                        else:
-                            pbar.update(data.shape[0])
+                        pbar.update(data.shape[0])
 
                     desc = '[{}/{}] loss {:2.4f} acc {:2.4f} n_trees {:2.4f} n_params {:2.4f} time_item {:2.4f}'.format(
                         epoch, 
@@ -254,9 +234,6 @@ class OnlineLearner(ABC):
                         fout.write(out_str + "\n")
                         last_stored = 0
                 
-                if self.n_updates is not None and self.n_updates < total_model_updates:
-                    break
-
                 if self.eval_every_epochs is not None and self.eval_every_epochs > 0 and epoch % self.eval_every_epochs == 0:
                     out_dict = {}
                     if self.x_test is not None and self.y_test is not None:
