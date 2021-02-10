@@ -85,16 +85,22 @@ class PyBiasedProxEnsemble(OnlineLearner):
     
     def _individual_proba(self, X):
         assert self.estimators_ is not None, "Call fit before calling predict_proba!"
+        # def single_predict_proba(h,X):
+        #     return h.predict_proba(X)
+        
+        # TODO MAKE SURE THAT THE ORDER OF H FITS TO ORDER OF WEIGHTS
+        # all_proba = Parallel(n_jobs=self.n_jobs, backend="threading")(
+        #     delayed(single_predict_proba) (h,X) for h in self.estimators_
+        # )
+        all_proba = []
 
-        def single_predict_proba(h,X):
-            return h.predict_proba(X)
+        for e in self.estimators_:
+            tmp = np.zeros(shape=(X.shape[0], self.n_classes_), dtype=np.float32)
+            tmp[:, e.classes_.astype(int)] += e.predict_proba(X)
+            all_proba.append(tmp)
 
-        all_proba = Parallel(n_jobs=self.n_jobs, backend="threading")(
-            delayed(single_predict_proba) (h,X) for h in self.estimators_
-        )
-
-        all_proba = np.array(all_proba)
-        return all_proba
+        #all_proba = np.array([h.predict_proba(X) for h in self.estimators_])
+        return np.array(all_proba)
 
     def _combine_proba(self, all_proba):
         scaled_prob = np.array([w * p for w,p in zip(all_proba, self.estimator_weights_)])

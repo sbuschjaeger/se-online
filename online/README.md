@@ -1,4 +1,4 @@
-You can generate these files via the Moa GUI. Download MOA (https://moa.cms.waikato.ac.nz/), start it and copy/paste it into "Other Tasks" -> Right Click on the "configure" text-field. Paste & Run  
+You can generate these files via the Moa GUI. Download MOA (https://moa.cms.waikato.ac.nz/), start it. Go to "Other Tasks" -> Right Click on the "configure" text-field. Paste & Run  
 
 ```
 WriteStreamToARFFFile -s (ConceptDriftStream -s (generators.LEDGeneratorDrift -d 1)   -d (ConceptDriftStream -s (generators.LEDGeneratorDrift -d 3) -d (ConceptDriftStream -s (generators.LEDGeneratorDrift -d 5)  -d (generators.LEDGeneratorDrift -d 7) -w 50 -p 250000 ) -w 50 -p 250000 ) -w 50 -p 250000) -m 1000000 -f /home/sbuschjaeger/projects/psgd-ensemble/online/led_a.arff

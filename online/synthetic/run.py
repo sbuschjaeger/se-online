@@ -100,6 +100,7 @@ parser.add_argument("-r", "--ray", help="Run via Ray",action="store_true", defau
 parser.add_argument("-m", "--multi", help="Run via multiprocessing pool",action="store_true", default=False)
 parser.add_argument("--ray_head", help="Run via Ray",action="store_true", default="auto")
 parser.add_argument("--redis_password", help="Run via Ray",action="store_true", default="5241590000000000")
+parser.add_argument("--dataset", help="Synthetic dataset to be used",action="store_true", default="agrawal_a")
 args = parser.parse_args()
 
 if not args.single and not args.ray and not args.multi:
@@ -112,7 +113,7 @@ if args.single:
         "pre": pre,
         "post": post,
         "fit": fit,
-        "backend": "local",
+        "backend": "single",
         "verbose":True
     }
 elif args.multi:
@@ -128,9 +129,18 @@ elif args.multi:
 else:
     exit(1)
 
-print("LOADING DATA")
-data, meta = loadarff("agrawal_a.arff")
-#data, meta = loadarff("agrawal_debug.arff")
+if not args.dataset.endswith(".arff"):
+    args.dataset = args.dataset + ".arff"
+
+outpath = os.path.join(".", args.dataset.split(".arff")[0])
+if not os.path.exists(outpath):
+    os.makedirs(outpath)
+else:
+    if os.path.isfile(os.path.join(outpath, "results.jsonl")):
+        os.unlink(os.path.join(outpath, "results.jsonl"))
+
+print("Loading {}".format(args.dataset))
+data, meta = loadarff(args.dataset)
 
 Xdict = {}
 for cname, ctype in zip(meta.names(), meta.types()):
@@ -164,8 +174,9 @@ experiment_cfg = {
 }
 
 online_learner_cfg = {
-    "n_updates":10000,
-    "batch_size":128,
+    #"n_updates":10000,
+    "epochs":1,
+    "batch_size":512,
     "out_file":"training.jsonl",
     "sliding_window":True,
     "verbose":args.single,
@@ -173,14 +184,13 @@ online_learner_cfg = {
 }
 
 models = []
-
-for T in [16, 32, 64, 128, 256]:
+for T in [16, 64, 128]:
     models.append(
         {
             "model":PyBiasedProxEnsemble,
             "model_params": {
                 "loss":"cross-entropy",
-                "step_size":1e-2, #1e-3,
+                "step_size":1e-3, #1e-3,
                 "ensemble_regularizer":"hard-L1",
                 "l_ensemble_reg":T,
                 "tree_regularizer":None,
@@ -197,76 +207,67 @@ for T in [16, 32, 64, 128, 256]:
         }
     )
 
+for lp in ["mc", "nba"]:
+    models.append(
+        {
+            "model":RiverModel,
+            "model_params": {
+                "river_model":river.tree.HoeffdingTreeClassifier(
+                        grace_period = 50,
+                        #split_confidence = 1e-6,
+                        split_confidence = 0.01,
+                        #min_samples_reevaluate = 300,
+                        leaf_prediction = lp,
+                        nominal_attributes = nominal_names
+                        #max_depth=35
+                    ),
+                **online_learner_cfg
+            },
+            **experiment_cfg
+        }
+    )
 
-models.append(
-    {
-        "model":RiverModel,
-        "model_params": {
-            "river_model":river.ensemble.SRPClassifier(
-                n_models = 25,
-                model = river.tree.HoeffdingTreeClassifier(
-                    grace_period = 50,
-                    #split_confidence = 1e-6,
-                    split_confidence = 0.01,
-                    #min_samples_reevaluate = 300,
-                    leaf_prediction = "mc",
-                    nominal_attributes = nominal_names,
-                    max_depth=35
+    models.append(
+        {
+            "model":RiverModel,
+            "model_params": {
+                "river_model":river.tree.ExtremelyFastDecisionTreeClassifier(
+                        grace_period = 50,
+                        #split_confidence = 1e-6,
+                        split_confidence = 0.01,
+                        #min_samples_reevaluate = 300,
+                        leaf_prediction = lp,
+                        nominal_attributes = nominal_names
+                        #max_depth=35
+                    ),
+                **online_learner_cfg
+            },
+            **experiment_cfg
+        }
+    )
+
+    models.append(
+        {
+            "model":RiverModel,
+            "model_params": {
+                "river_model":river.ensemble.SRPClassifier(
+                    n_models = 10,
+                    model = river.tree.HoeffdingTreeClassifier(
+                        grace_period = 50,
+                        #split_confidence = 1e-6,
+                        split_confidence = 0.01,
+                        #min_samples_reevaluate = 300,
+                        leaf_prediction = lp,
+                        nominal_attributes = nominal_names
+                        #max_depth=35
+                    ),
                 ),
-            ),
-            **online_learner_cfg
-        },
-        **experiment_cfg
-    }
-)
+                **online_learner_cfg
+            },
+            **experiment_cfg
+        }
+    )
 
-# for d in [3,5,10,12,15]:
-#     models.append(
-#         {
-#             "model":RiverModel,
-#             "river_model":river.ensemble.SRPClassifier(
-#                 n_models = 10,
-#                 model = river.tree.HoeffdingTreeClassifier(
-#                     grace_period = 50,
-#                     #split_confidence = 1e-6,
-#                     split_confidence = 0.01,
-#                     #min_samples_reevaluate = 300,
-#                     leaf_prediction = "mc",
-#                     nominal_attributes = nominal_names,
-#                     max_depth=20
-#                 ),
-#             ),
-#             **shared_cfg
-#         }
-#     )
-
-# for T in [256]:
-#     models.append(
-#         {
-#             "model":SGDEnsemble,
-#             "max_trees":T,
-#             "init_mode":"fully-random",
-#             "next_mode":"gradient",
-#             "is_nominal":is_nominal,
-#             **shared_cfg,
-#             **grad_cfg
-#         }
-#     )
-
-# for l_reg in [1e-2,1e-3,5e-1,5e-2,5e-3]:
-#     models.append(
-#             {
-#                 "model":BiasedProxEnsemble,
-#                 "max_trees":0,
-#                 "l_reg":l_reg,
-#                 "init_mode":"train",
-#                 "next_mode":"gradient",
-#                 "is_nominal":is_nominal,
-#                 **shared_cfg,
-#                 **grad_cfg
-#             }
-#         )
-
-# random.shuffle(models)
+random.shuffle(models)
 
 run_experiments(basecfg, models)

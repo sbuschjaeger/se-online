@@ -137,8 +137,8 @@ class OnlineLearner(ABC):
         return {"loss":test_loss / test_cnt, "num_trees":test_n_trees / test_cnt, "accuracy": test_accuracy / test_cnt, "num_parameters" : test_n_parameters / test_cnt}
 
     def fit(self, X, y, sample_weight = None):
-        self.X_ = X
-        self.y_ = y 
+        # self.X_ = X
+        # self.y_ = y 
         
         self.classes_ = unique_labels(y)
         self.n_classes_ = len(self.classes_)
@@ -156,16 +156,17 @@ class OnlineLearner(ABC):
         total_item_cnt = 0
         total_model_updates = 0
         for epoch in range(self.epochs):
-            mini_batches = create_mini_batches(self.X_, self.y_, self.batch_size, self.shuffle,self.sliding_window) 
+            mini_batches = create_mini_batches(X, y, self.batch_size, self.shuffle,self.sliding_window) 
             epoch_loss = 0
             batch_cnt = 0
-            avg_accuarcy = 0
+            sum_accuracy = 0
             n_trees = 0
             n_params = 0
             last_stored = 0
             epoch_time = 0
 
-            first_batch = epoch > 0 
+            new_epoch = epoch > 0 
+            first_batch = True
             if self.n_updates is not None:
                 if self.sliding_window:
                     tqdm_total = int(min(self.n_updates - total_model_updates, X.shape[0]))
@@ -173,7 +174,6 @@ class OnlineLearner(ABC):
                     tqdm_total = int(min(self.n_updates - total_model_updates, X.shape[0] / self.batch_size))
             else:
                 tqdm_total = X.shape[0]
-            #print("tqdm_total:", tqdm_total)
 
             with tqdm(total=tqdm_total, ncols=135, disable = not self.verbose) as pbar:
                 for batch in mini_batches: 
@@ -182,33 +182,35 @@ class OnlineLearner(ABC):
                     data, target = batch 
                     
                     # Compute current statistics
-                    if self.sliding_window:
+                    if self.sliding_window and not first_batch:
                         output = self.predict_proba(data[-1].reshape(1,data.shape[1]))
                         loss = self.loss_(output, [target[-1]]).mean()
                         accuracy = accuracy_score([target[-1]], output.argmax(axis=1))*100.0
+                        cur_batch_size = 1
                     else:
                         output = self.predict_proba(data)
                         loss = self.loss_(output, target).mean()
                         accuracy = accuracy_score(target, output.argmax(axis=1))*100.0
+                        cur_batch_size = data.shape[0]
                     num_trees = self.num_trees() 
                     num_params = self.num_parameters() 
 
                     # Update Model                    
                     start_time = time.time()
-                    _, _, updates = self.next(data, target, train = True, new_epoch = first_batch)
+                    _, _, updates = self.next(data, target, train = True, new_epoch = new_epoch)
                     batch_time = time.time() - start_time
 
                     # Update running statistics
-                    epoch_time += 1000 * batch_time / data.shape[0]
+                    epoch_time += 1000 * batch_time / cur_batch_size
                     first_batch = False
                     total_model_updates += updates
                     n_trees += num_trees
                     n_params += num_params
                     epoch_loss += loss
-                    avg_accuarcy += accuracy
+                    sum_accuracy += accuracy
                     batch_cnt += 1
-                    total_item_cnt += data.shape[0]
-                    last_stored += data.shape[0]
+                    total_item_cnt += cur_batch_size
+                    last_stored += cur_batch_size
 
                     if self.n_updates is not None:
                         pbar.update(updates)
@@ -222,7 +224,7 @@ class OnlineLearner(ABC):
                         epoch, 
                         epochs-1, 
                         epoch_loss/batch_cnt, 
-                        avg_accuarcy/batch_cnt,
+                        sum_accuracy/batch_cnt,
                         n_trees/batch_cnt,
                         n_params/batch_cnt,
                         epoch_time / batch_cnt
@@ -239,11 +241,11 @@ class OnlineLearner(ABC):
                         out_dict["item_accuracy"] = accuracy 
                         out_dict["item_num_trees"] = num_trees
                         out_dict["item_num_parameters"] = num_params
-                        out_dict["item_time"] = batch_time / data.shape[0]
+                        out_dict["item_time"] = batch_time / cur_batch_size
                         out_dict["total_model_updates"] = total_model_updates
 
                         out_dict["train_loss"] = epoch_loss/batch_cnt
-                        out_dict["train_accuracy"] = avg_accuarcy/batch_cnt
+                        out_dict["train_accuracy"] = sum_accuracy/batch_cnt
                         out_dict["train_num_trees"] = n_trees/batch_cnt
                         out_dict["train_num_parameters"] = n_params/batch_cnt
                         out_dict["total_item_cnt"] = total_item_cnt
@@ -270,7 +272,7 @@ class OnlineLearner(ABC):
                     out_dict["total_model_updates"] = total_model_updates
 
                     out_dict["train_loss"] = epoch_loss/batch_cnt
-                    out_dict["train_accuracy"] = avg_accuarcy/batch_cnt
+                    out_dict["train_accuracy"] = sum_accuracy/batch_cnt
                     out_dict["train_num_trees"] = n_trees/batch_cnt
                     out_dict["train_num_parameters"] = n_params/batch_cnt
                     out_dict["total_item_cnt"] = total_item_cnt
@@ -283,7 +285,7 @@ class OnlineLearner(ABC):
                             epoch, 
                             epochs-1, 
                             epoch_loss/batch_cnt, 
-                            avg_accuarcy/batch_cnt,
+                            sum_accuracy/batch_cnt,
                             n_trees/batch_cnt,
                             n_params/batch_cnt,
                             epoch_time / batch_cnt,
@@ -294,7 +296,7 @@ class OnlineLearner(ABC):
                             epoch, 
                             epochs-1, 
                             epoch_loss/batch_cnt, 
-                            avg_accuarcy/batch_cnt,
+                            sum_accuracy/batch_cnt,
                             n_trees/batch_cnt,
                             n_params/batch_cnt,
                             epoch_time / batch_cnt

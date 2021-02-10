@@ -66,22 +66,35 @@ class RiverModel(OnlineLearner):
 
     def num_parameters(self):
         n_nodes = 0
+        # if hasattr(self.model, "models"):
+        #     for m in self.model.models:
+        #         if hasattr(m, "model"):
+        #             n_nodes += 2 * m.model._n_decision_nodes + self.n_classes_ * m.model._n_active_leaves + (self.n_classes_ + 1) * m.model._n_inactive_leaves
+        #         else:
+        #             n_nodes += 2 * m._n_decision_nodes + self.n_classes_ * m._n_active_leaves + (self.n_classes_ + 1) * m._n_inactive_leaves
+        # else:
+        #     n_nodes = 2 * self.model._n_decision_nodes + self.n_classes_ * self.model._n_active_leaves + (self.n_classes_ + 1) * model._n_inactive_leaves
         if hasattr(self.model, "models"):
             for m in self.model.models:
                 if hasattr(m, "model"):
-                    n_nodes += 2 * m.model._n_decision_nodes + self.n_classes_ * m.model._n_active_leaves + (self.n_classes_ + 1) * m.model._n_inactive_leaves
+                    n_nodes += m.model._n_decision_nodes + m.model._n_active_leaves + m.model._n_inactive_leaves
                 else:
-                    n_nodes += 2 * m._n_decision_nodes + self.n_classes_ * m._n_active_leaves + (self.n_classes_ + 1) * m._n_inactive_leaves
+                    n_nodes += m._n_decision_nodes + m._n_active_leaves + m._n_inactive_leaves
         else:
-            n_nodes = 2 * self.model._n_decision_nodes + self.n_classes_ * self.model._n_active_leaves + (self.n_classes_ + 1) * m.model._n_inactive_leaves
+            n_nodes = self.model._n_decision_nodes + self.model._n_active_leaves + self.model._n_inactive_leaves
         return n_nodes
 
     def next(self, data, target, train = False, new_epoch = False):
         losses = []
         output = []
+        if self.sliding_window and self.batch_size > 1:
+            data = [data[-1]]
+            target = [target[-1]]
+            
         for x, y in zip(data, target):
             pred = self.predict_proba_one(x)
             
+            # if sliding_window = True checken
             if train:
                 x_dict = {}
                 for i, xi in enumerate(x):
