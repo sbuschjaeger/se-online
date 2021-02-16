@@ -145,17 +145,16 @@ for cname, ctype in zip(meta.names(), meta.types()):
         tmp = enc.fit_transform(data[cname].reshape(-1, 1))
         for i in range(tmp.shape[1]):
             Xdict[cname + "_" + str(i)] = tmp[:,i]
+
 df = pd.DataFrame(Xdict)
 Y = df["label"].values.astype(np.int32)
 df = df.drop("label", axis=1)
 is_nominal = (df.nunique() == 2).values
 nominal_names = [name for nom,name in zip(is_nominal, df.columns.values) if nom ]
-# print(nominal_names)
 
 scaler = MinMaxScaler()
 X = scaler.fit_transform(df.values.astype(np.float64))
-print(X.shape)
-asdf
+
 experiment_cfg = {
     "X":X,
     "Y":Y,
@@ -165,109 +164,163 @@ experiment_cfg = {
 }
 
 online_learner_cfg = {
-    #"n_updates":10000,
     "epochs":1,
-    "batch_size":128,
-    "out_file":"training.jsonl",
+    "batch_size":16, 
+    "out_path":".",
     "sliding_window":True,
     "verbose":args.single,
-    "shuffle":False
+    "shuffle":False,
+    "eval_every_epochs":1
 }
 
 models = []
-#16, 32, 64,
-for T in [10, 32, 64, 128, 256]:
+
+for bs in [8,16,32]:
+    online_learner_cfg["batch_size"] = bs
+
+    for d in [2,4,6,8]:
+        for T in [32,64,128,256]:
+            for lr in [1e-3,1e-2,1e-1]:
+                models.append(
+                    {
+                        "model":PyBiasedProxEnsemble,
+                        "model_params": {
+                            "loss":"cross-entropy",
+                            "step_size":lr, #1e-3,
+                            "ensemble_regularizer":"hard-L1",
+                            "l_ensemble_reg":T,
+                            "tree_regularizer":None,
+                            "l_tree_reg":0,
+                            "normalize_weights":True,
+                            "init_weight":"average",
+                            "max_depth":d,
+                            "scale_batch":0,
+                            "var_batch":0.001,
+                            "seed":experiment_cfg["seed"],
+                            "update_trees":False,
+                            **online_learner_cfg
+                        },
+                        **experiment_cfg
+                    }
+                )
+
+                models.append(
+                    {
+                        "model":PyBiasedProxEnsemble,
+                        "model_params": {
+                            "loss":"cross-entropy",
+                            "step_size":lr, #1e-3,
+                            "ensemble_regularizer":"hard-L1",
+                            "l_ensemble_reg":T,
+                            "tree_regularizer":None,
+                            "l_tree_reg":0,
+                            "normalize_weights":True,
+                            "init_weight":"average",
+                            "max_depth":d,
+                            "scale_batch":0,
+                            "var_batch":0.001,
+                            "seed":experiment_cfg["seed"],
+                            "update_trees":True,
+                            **online_learner_cfg
+                        },
+                        **experiment_cfg
+                    }
+                )
+
+        models.append(
+            {
+                "model":JaxModel,
+                "model_params": {
+                    "loss":"cross-entropy",
+                    "step_size":1e-3,
+                    "max_depth":d,
+                    "n_trees":10,
+                    **online_learner_cfg
+                },
+                **experiment_cfg
+            }
+        )
+
+
+online_learner_cfg["batch_size"] = 2
+for lp in ["mc", "nba"]:
     models.append(
         {
-            "model":PyBiasedProxEnsemble,
+            "model":RiverModel,
             "model_params": {
-                "loss":"cross-entropy",
-                "step_size":1e-3, #1e-3,
-                "ensemble_regularizer":"hard-L1",
-                "l_ensemble_reg":T,
-                "tree_regularizer":None,
-                "l_tree_reg":0,
-                "normalize_weights":True,
-                "init_weight":"average",
-                "max_depth":None,
-                "scale_batch":0,
-                "var_batch":0.001,
-                "seed":experiment_cfg["seed"],
+                "river_model":river.tree.HoeffdingTreeClassifier(
+                    grace_period = 50,
+                    #split_confidence = 1e-6,
+                    split_confidence = 0.01,
+                    #min_samples_reevaluate = 300,
+                    leaf_prediction = lp,
+                    nominal_attributes = nominal_names
+                    #max_depth=35
+                ),
                 **online_learner_cfg
+            },
+            "river_model_params" : {
+                "grace_period" : 50,
+                "split_confidence" : 0.01,
+                "leaf_prediction" : lp,
+                "nominal_attributes" : nominal_names
             },
             **experiment_cfg
         }
     )
 
-
-models.append(
-    {
-        "model":RiverModel,
-        "model_params": {
-            "river_model":river.ensemble.SRPClassifier(
-                n_models = 10,
-                model = river.tree.HoeffdingTreeClassifier(
+    models.append(
+        {
+            "model":RiverModel,
+            "model_params": {
+                "river_model":river.tree.ExtremelyFastDecisionTreeClassifier(
                     grace_period = 50,
                     #split_confidence = 1e-6,
                     split_confidence = 0.01,
                     #min_samples_reevaluate = 300,
-                    #leaf_prediction = "mc",
+                    leaf_prediction = lp,
                     nominal_attributes = nominal_names
                     #max_depth=35
                 ),
-            ),
-            **online_learner_cfg
-        },
-        **experiment_cfg
-    }
-)
+                **online_learner_cfg
+            },
+            "river_model_params" : {
+                "grace_period" : 50,
+                "split_confidence" : 0.01,
+                "leaf_prediction" : lp,
+                "nominal_attributes" : nominal_names
+            },
+            **experiment_cfg
+        }
+    )
 
-# for d in [3,5,10,12,15]:
-#     models.append(
-#         {
-#             "model":RiverModel,
-#             "river_model":river.ensemble.SRPClassifier(
-#                 n_models = 10,
-#                 model = river.tree.HoeffdingTreeClassifier(
-#                     grace_period = 50,
-#                     #split_confidence = 1e-6,
-#                     split_confidence = 0.01,
-#                     #min_samples_reevaluate = 300,
-#                     leaf_prediction = "mc",
-#                     nominal_attributes = nominal_names,
-#                     max_depth=20
-#                 ),
-#             ),
-#             **shared_cfg
-#         }
-#     )
-
-# for T in [256]:
-#     models.append(
-#         {
-#             "model":SGDEnsemble,
-#             "max_trees":T,
-#             "init_mode":"fully-random",
-#             "next_mode":"gradient",
-#             "is_nominal":is_nominal,
-#             **shared_cfg,
-#             **grad_cfg
-#         }
-#     )
-
-# for l_reg in [1e-2,1e-3,5e-1,5e-2,5e-3]:
-#     models.append(
-#             {
-#                 "model":BiasedProxEnsemble,
-#                 "max_trees":0,
-#                 "l_reg":l_reg,
-#                 "init_mode":"train",
-#                 "next_mode":"gradient",
-#                 "is_nominal":is_nominal,
-#                 **shared_cfg,
-#                 **grad_cfg
-#             }
-#         )
+    models.append(
+        {
+            "model":RiverModel,
+            "model_params": {
+                "river_model":river.ensemble.SRPClassifier(
+                    n_models = 10,
+                    model = river.tree.HoeffdingTreeClassifier(
+                        grace_period = 50,
+                        #split_confidence = 1e-6,
+                        split_confidence = 0.01,
+                        #min_samples_reevaluate = 300,
+                        leaf_prediction = lp,
+                        nominal_attributes = nominal_names
+                        #max_depth=35
+                    )
+                ),
+                **online_learner_cfg
+            },
+            "river_model_params" : {
+                "grace_period" : 50,
+                "split_confidence" : 0.01,
+                "leaf_prediction" : lp,
+                "nominal_attributes" : nominal_names
+            },
+            **experiment_cfg
+        }
+    )
 
 # random.shuffle(models)
 

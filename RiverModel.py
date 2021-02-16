@@ -85,7 +85,6 @@ class RiverModel(OnlineLearner):
         return n_nodes
 
     def next(self, data, target, train = False, new_epoch = False):
-        losses = []
         output = []
         if self.sliding_window and self.batch_size > 1:
             data = [data[-1]]
@@ -93,6 +92,7 @@ class RiverModel(OnlineLearner):
             
         for x, y in zip(data, target):
             pred = self.predict_proba_one(x)
+            output.append(pred)
             
             # if sliding_window = True checken
             if train:
@@ -101,7 +101,8 @@ class RiverModel(OnlineLearner):
                     x_dict["att_" + str(i)] = xi
                 self.model.learn_one(x_dict, y)
 
-            output.append(pred)
-        losses.append(self.loss_(np.array(output), target))
-        
-        return {"loss": np.mean(losses), "num_trees": self.num_trees(), "num_parameters":self.num_parameters()}, np.array(output), data.shape[0]
+        output = np.array(output)
+        accuracy = (output.argmax(axis=1) == target) * 100.0
+        n_trees = [self.num_trees() for _ in range(data.shape[0])]
+        n_param = [self.num_parameters() for _ in range(data.shape[0])]
+        return {"accuracy": accuracy, "num_trees": n_trees, "num_parameters" : n_param}, output

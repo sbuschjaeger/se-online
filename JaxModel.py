@@ -173,6 +173,10 @@ class JaxModel(OnlineLearner):
         return self.num_trees() * (self.W[0].shape[0] * self.W[0].shape[1] + self.B[0].shape[0] + self.leaf_preds[0].shape[0] * self.leaf_preds[0].shape[1])
 
     def next(self, data, target, train = False, new_epoch = False):
+        # If train = True we basically call predict_proba twice
+        # TODO Change this
+        output = self.predict_proba(data)
+
         if train:
             if new_epoch:
                 self.beta = min(self.temp_scaling * self.beta, self.beta_max)
@@ -222,19 +226,10 @@ class JaxModel(OnlineLearner):
                 # print("W:", self.W[i])
                 # print("B:", self.B[i])
 
-            output = self.predict_proba(data)
-
-            return {"loss": np.asarray(loss), "num_trees": self.num_trees(),"num_parameters":self.num_parameters()}, output, 1
-        else:
-            output = self.predict_proba(data)
-            if self.loss == "mse":
-                target_one_hot = np.array( [ [1 if y == i else 0 for i in range(self.n_classes_)] for y in target] )
-                loss = (output - target_one_hot) * (output - target_one_hot)
-            elif self.loss == "cross-entropy":
-                target_one_hot = np.array( [ [1 if y == i else 0 for i in range(self.n_classes_)] for y in target] )
-                p = jax.nn.softmax(output, axis=1)
-                loss = -target_one_hot*jax.numpy.log(p)
-            return {"loss": np.asarray(loss.mean()), "num_trees": self.num_trees(),"num_parameters":self.num_parameters()}, output, 0
+        accuracy = (output.argmax(axis=1) == target) * 100.0
+        n_trees = [self.num_trees() for _ in range(data.shape[0])]
+        n_param = [self.num_parameters() for _ in range(data.shape[0])]
+        return {"accuracy": accuracy, "num_trees": n_trees, "num_parameters" : n_param}, output
 
     def fit(self, X, y, sample_weight = None):
         classes_ = unique_labels(y)

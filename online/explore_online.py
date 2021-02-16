@@ -18,14 +18,15 @@ def nice_name(row):
     if row["model"] == "RiverModel":
         model_name = "{} with {} mode {}".format(row["model"], row["model_params.river_model"], row["river_model_params.leaf_prediction"])
     elif (row["model"] == "PyBiasedProxEnsemble"):
-        model_name = "{} with max_depth {} and R1 = {}, λ1 = {}, R2 = {}, λ2 = {}".format(row["model"], row.get("model_params.max_depth", None), row.get("model_params.ensemble_regularizer", "None"), row.get("model_params.l_ensemble_reg", "None"), row.get("model_params.tree_regularizer", "None"), row.get("model_params.l_tree_reg", "None"))
+        model_name = "{} with d = {}, R1 = {}, λ1 = {}, R2 = {}, λ2 = {}, bs = {}, lr = {}, lt {}".format(row["model"], row.get("model_params.max_depth", None), row.get("model_params.ensemble_regularizer", "None"), row.get("model_params.l_ensemble_reg", "None"), row.get("model_params.tree_regularizer", "None"), row.get("model_params.l_tree_reg", "None"), row.get("model_params.batch_size", None), row.get("model_params.step_size", None), row.get("model_params.update_trees", None))
     elif row["model"] == "JaxModel":
-        model_name = "{} with T = {}, max_depth = {}, with temp_scaling = {}".format(row["model"], row["n_trees"], row["max_depth"], row["temp_scaling"])
+        model_name = "{} with T = {}, d = {}, with temp_scaling = {}".format(row["model"], row["model_params.n_trees"], row["model_params.max_depth"], row.get("model_params.temp_scaling", None) )
     else:
-        model_name = "{} with T = {}, max_depth = {}, modes = {}/{}, stepsize = {}".format(row["model"], row["max_trees"], row["max_depth"], row["init_mode"],row["next_mode"], row["step_size"])
+        model_name = "{} with T = {}, d = {}, modes = {}/{}, stepsize = {}".format(row["model"], row["max_trees"], row["max_depth"], row["init_mode"],row["next_mode"], row["step_size"])
     
     return model_name
 
+#dataset = "elec"
 dataset = "covtype"
 dataset = os.path.join(dataset, "results")
 all_subdirs = [os.path.join(dataset,d) for d in os.listdir(dataset) if os.path.isdir(os.path.join(dataset, d))]
@@ -44,52 +45,23 @@ mean_params = []
 mean_time = []
 for m in df["nice_name"].values:
     experiment_path = df.loc[ df["nice_name"] == m ]["out_path"].values[0]
-    traindf = None
-    
-    sub_experiments = [os.path.join(experiment_path,d) for d in os.listdir(experiment_path) if os.path.isdir(os.path.join(experiment_path, d))]
-
-    if len(sub_experiments) == 0:
-        sub_experiments = [os.path.join(experiment_path, "training.jsonl")]
-
-    accuracies = []
-    losses = []
-    num_nodes = []
-    times = []
-    total_item_cnt = None
-    for experiment in sub_experiments:
-        print("Reading {}".format(experiment))
-        tdf = read_jsonl(experiment)
-        losses.append(tdf["item_loss"].values)
-        accuracies.append(tdf["item_accuracy"].values)
-        num_nodes.append(tdf["item_num_parameters"].values)
-        times.append(tdf["item_time"].values)
-        if total_item_cnt is None:
-            total_item_cnt = tdf["total_item_cnt"]
-    
-     
-    d = {
-        "total_item_cnt":total_item_cnt,
-        "item_loss":np.mean(losses, axis=0),
-        "item_accuracy":np.mean(accuracies, axis=0),
-        "item_num_parameters":np.mean(num_nodes, axis=0),
-        "item_time":np.mean(times,axis=0)
-    }
-    traindf = pd.DataFrame(d)
-    
-    traindfs.append(traindf)
-    mean_accuracy.append(np.mean(accuracies))
-    mean_loss.append(np.mean(losses))
-    mean_params.append(np.mean(num_nodes))
-    mean_time.append(np.mean(times))
+    metrics = np.load(os.path.join(experiment_path, "epoch_0.npy"), allow_pickle=True).item()
+    traindf = pd.DataFrame(metrics)
+    mean_accuracy.append(np.mean(metrics["accuracy"]))
+    mean_params.append(np.mean(metrics["num_parameters"]))
+    # mean_loss.append(np.mean(metrics["loss"]))
+    # mean_time.append(np.mean(metrics["time"]))
 
 df["mean_accuracy"] = mean_accuracy
-df["mean_loss"] = mean_loss
 df["mean_params"] = mean_params
-df["mean_time"] = mean_time
+# df["mean_loss"] = mean_loss
+# df["mean_time"] = mean_time
 
-tabledf = df[["nice_name", "mean_accuracy", "mean_loss", "mean_params", "mean_time"]]
+#tabledf = df[["nice_name", "mean_accuracy", "mean_loss", "mean_params", "mean_time"]]
+tabledf = df[["nice_name", "mean_accuracy", "mean_params", "scores.mean_fit_time"]]
 tabledf = tabledf.sort_values(by=['mean_accuracy'], ascending = False)
 #display(tabledf)
+print("Processed {} experiments".format(len(tabledf)))
 display(HTML(tabledf.to_html()))
 
 # %%
@@ -121,3 +93,34 @@ fig.update_layout(
     height=900, width=1100
 )
 fig.show()
+
+
+#%%
+sub_experiments = [os.path.join(experiment_path,d) for d in os.listdir(experiment_path) if os.path.isdir(os.path.join(experiment_path, d))]
+
+if len(sub_experiments) == 0:
+    sub_experiments = [os.path.join(experiment_path, "epoch_0.npy")]
+
+accuracies = []
+losses = []
+num_nodes = []
+times = []
+total_item_cnt = None
+for experiment in sub_experiments:
+    print("Reading {}".format(experiment))
+    tdf = read_jsonl(experiment)
+    losses.append(tdf["item_loss"].values)
+    accuracies.append(tdf["item_accuracy"].values)
+    num_nodes.append(tdf["item_num_parameters"].values)
+    times.append(tdf["item_time"].values)
+    if total_item_cnt is None:
+        total_item_cnt = tdf["total_item_cnt"]
+
+    
+d = {
+    "total_item_cnt":total_item_cnt,
+    "item_loss":np.mean(losses, axis=0),
+    "item_accuracy":np.mean(accuracies, axis=0),
+    "item_num_parameters":np.mean(num_nodes, axis=0),
+    "item_time":np.mean(times,axis=0)
+}

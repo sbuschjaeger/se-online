@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import random
 from tqdm import tqdm
@@ -52,14 +53,12 @@ class OnlineLearner(ABC):
                 seed = None,
                 verbose = True, 
                 shuffle = True,
-                x_test = None, 
-                y_test = None, 
-                out_file = None,
-                eval_every_items = None,
+                out_path = None,
                 eval_every_epochs = None):
         
         assert eval_loss in ["mse","cross-entropy","hinge2"], "Currently only {{mse, cross-entropy, hinge2}} loss is supported"
         assert epochs >= 1, "epochs must be at-least 1"
+        assert eval_every_epochs is None or eval_every_epochs > 0, "eval_every epochs should either be None (nothing is stored) or > 0"
 
         self.eval_loss = eval_loss
         self.batch_size = batch_size
@@ -67,11 +66,8 @@ class OnlineLearner(ABC):
         self.epochs = epochs
         self.verbose = verbose
         self.shuffle = shuffle
-        self.x_test = x_test
-        self.y_test = y_test
-        self.eval_every_items = eval_every_items
         self.eval_every_epochs = eval_every_epochs
-        self.out_file = out_file
+        self.out_path = out_path
 
         if seed is None:
             self.seed = 1234
@@ -109,173 +105,74 @@ class OnlineLearner(ABC):
             raise "Currently only the losses {{cross-entropy, mse, hinge2}} are supported, but you provided: {}".format(self.eval_loss)
         return loss
 
-    def eval(self, X, y):
-        test_batches = create_mini_batches(X, y, self.batch_size, True) 
-        test_accuracy = 0
-        test_loss = 0
-        test_n_trees = 0
-        test_n_parameters = 0
-        
-        test_cnt = 0
-        for batch in test_batches: 
-            data, target = batch 
-            metrics, output, _ = self.next(data, target, train = False)
-
-            test_loss += metrics["loss"]
-            test_n_trees += metrics["num_trees"] 
-            test_n_parameters += metrics["num_parameters"] 
-            test_accuracy += accuracy_score(target, output.argmax(axis=1))*100.0
-            test_cnt += 1
-        return {"loss":test_loss / test_cnt, "num_trees":test_n_trees / test_cnt, "accuracy": test_accuracy / test_cnt, "num_parameters" : test_n_parameters / test_cnt}
-
     def fit(self, X, y, sample_weight = None):
-        # self.X_ = X
-        # self.y_ = y 
-        
         self.classes_ = unique_labels(y)
         self.n_classes_ = len(self.classes_)
         self.n_outputs_ = self.n_classes_
         
-        if self.out_file is not None:
-            fout = open(self.out_file, "w")
-        else:
-            fout = None
-
-        if self.epochs is None:
-            self.epochs = int(max(self.n_updates / (X.shape[0] / self.batch_size), 1)) + 1
-
-        epochs = self.epochs
-        total_item_cnt = 0
-        total_model_updates = 0
         for epoch in range(self.epochs):
-            mini_batches = create_mini_batches(X, y, self.batch_size, self.shuffle,self.sliding_window) 
-            epoch_loss = 0
-            batch_cnt = 0
-            sum_accuracy = 0
-            n_trees = 0
-            n_params = 0
-            last_stored = 0
-            epoch_time = 0
+            mini_batches = create_mini_batches(X, y, self.batch_size, self.shuffle, self.sliding_window) 
+
+            losses = []
+            total_loss = 0
+            times = []
+            total_time = 0
+            
+            metrics = {}
 
             new_epoch = epoch > 0 
             first_batch = True
+            example_cnt = 0
 
-            with tqdm(total=X.shape[0], ncols=135, disable = not self.verbose) as pbar:
+            with tqdm(total=X.shape[0], ncols=150, disable = not self.verbose) as pbar:
                 for batch in mini_batches: 
                     data, target = batch 
                     
-                    # Compute current statistics
-                    if self.sliding_window and not first_batch:
-                        output = self.predict_proba(data[-1].reshape(1,data.shape[1]))
-                        loss = self.loss_(output, [target[-1]]).mean()
-                        accuracy = accuracy_score([target[-1]], output.argmax(axis=1))*100.0
-                        cur_batch_size = 1
-                    else:
-                        output = self.predict_proba(data)
-                        loss = self.loss_(output, target).mean()
-                        accuracy = accuracy_score(target, output.argmax(axis=1))*100.0
-                        cur_batch_size = data.shape[0]
-                    num_trees = self.num_trees() 
-                    num_params = self.num_parameters() 
-
                     # Update Model                    
                     start_time = time.time()
-                    _, _, updates = self.next(data, target, train = True, new_epoch = new_epoch)
+                    batch_metrics, output = self.next(data, target, train = True, new_epoch = new_epoch)
                     batch_time = time.time() - start_time
 
-                    # Update running statistics
-                    epoch_time += 1000 * batch_time / cur_batch_size
-                    first_batch = False
-                    total_model_updates += updates
-                    n_trees += num_trees
-                    n_params += num_params
-                    epoch_loss += loss
-                    sum_accuracy += accuracy
-                    batch_cnt += 1
-                    total_item_cnt += cur_batch_size
-                    last_stored += cur_batch_size
+                    # Extract statistics
+                    for key,val in batch_metrics.items():
+                        if self.sliding_window and not first_batch:
+                            metrics[key] = np.concatenate( (metrics.get(key,[]), [val[-1]]), axis=None )
+                            metrics[key + "_sum"] = metrics.get( key + "_sum",0) + val[-1]
+                        else:
+                            metrics[key] = np.concatenate( (metrics.get(key,[]), val), axis=None )
+                            metrics[key + "_sum"] = metrics.get( key + "_sum",0) + np.sum(val)
 
-                    if self.sliding_window:
+                    if self.sliding_window and not first_batch:
+                        loss = self.loss_(output[np.newaxis,-1,:], [target[-1]]).mean(axis=1).sum()
+                        example_cnt += 1
                         pbar.update(1)
                     else:
+                        loss = self.loss_(output, target).mean(axis=1).sum()
+                        example_cnt += data.shape[0]
                         pbar.update(data.shape[0])
+                    
+                    # TODO ADD times and losses to metrics and write it to disk
+                    times.append(batch_time)
+                    total_time += batch_time
 
-                    desc = '[{}/{}] loss {:2.4f} acc {:2.4f} n_trees {:2.4f} n_params {:2.4f} time_item {:2.4f}'.format(
+                    losses.append(loss)
+                    total_loss += loss
+
+                    m_str = ""
+                    for key,val in metrics.items():
+                        if "_sum" in key:
+                            m_str += "{} {:2.4f} ".format(key.split("_sum")[0], val / example_cnt)
+                    
+                    desc = '[{}/{}] loss {:2.4f} time_item {:2.4f} {}'.format(
                         epoch, 
-                        epochs-1, 
-                        epoch_loss/batch_cnt, 
-                        sum_accuracy/batch_cnt,
-                        n_trees/batch_cnt,
-                        n_params/batch_cnt,
-                        epoch_time / batch_cnt
+                        self.epochs-1, 
+                        total_loss / example_cnt, 
+                        total_time / example_cnt,
+                        m_str
                     )
                     pbar.set_description(desc)
-                    if self.eval_every_items is not None and last_stored >= self.eval_every_items and self.eval_every_items > 0:
-                        out_dict = {}
-                        if self.x_test is not None and self.y_test is not None:
-                            tmp_dict = self.eval(self.x_test, self.y_test)
-                            for key, val in tmp_dict.items():
-                                out_dict["test_" + key] = val
-                        
-                        out_dict["item_loss"] = loss
-                        out_dict["item_accuracy"] = accuracy 
-                        out_dict["item_num_trees"] = num_trees
-                        out_dict["item_num_parameters"] = num_params
-                        out_dict["item_time"] = batch_time / cur_batch_size
-                        out_dict["total_model_updates"] = total_model_updates
 
-                        out_dict["train_loss"] = epoch_loss/batch_cnt
-                        out_dict["train_accuracy"] = sum_accuracy/batch_cnt
-                        out_dict["train_num_trees"] = n_trees/batch_cnt
-                        out_dict["train_num_parameters"] = n_params/batch_cnt
-                        out_dict["total_item_cnt"] = total_item_cnt
-                        out_dict["epoch"] = epoch
-                        out_str = json.dumps(out_dict)
-                        fout.write(out_str + "\n")
-                        last_stored = 0
+                    first_batch = False
                 
-                if self.eval_every_epochs is not None and self.eval_every_epochs > 0 and epoch % self.eval_every_epochs == 0:
-                    out_dict = {}
-                    if self.x_test is not None and self.y_test is not None:
-                        tmp_dict = self.eval(self.x_test, self.y_test)
-                        for key, val in tmp_dict.items():
-                            out_dict["test_" + key] = val
-                    
-                    # out_dict["item_loss"] = loss
-                    # out_dict["item_accuracy"] = accuracy 
-                    # out_dict["item_num_trees"] = num_trees 
-                    # out_dict["item_num_parameters"] = num_params 
-                    # out_dict["item_time"] = batch_time / data.shape[0]
-                    out_dict["total_model_updates"] = total_model_updates
-
-                    out_dict["train_loss"] = epoch_loss/batch_cnt
-                    out_dict["train_accuracy"] = sum_accuracy/batch_cnt
-                    out_dict["train_num_trees"] = n_trees/batch_cnt
-                    out_dict["train_num_parameters"] = n_params/batch_cnt
-                    out_dict["total_item_cnt"] = total_item_cnt
-                    out_dict["epoch"] = epoch
-                    out_str = json.dumps(out_dict)
-                    fout.write(out_str + "\n")
-
-                    if self.x_test is not None and self.y_test is not None:
-                        desc = '[{}/{}] loss {:2.4f} acc {:2.4f} n_trees {:2.4f} n_params {:2.4f} time_item {:2.4f} test-acc {:2.4f}'.format(
-                            epoch, 
-                            epochs-1, 
-                            epoch_loss/batch_cnt, 
-                            sum_accuracy/batch_cnt,
-                            n_trees/batch_cnt,
-                            n_params/batch_cnt,
-                            epoch_time / batch_cnt,
-                            out_dict["test_accuracy"]
-                        )
-                    else:
-                         desc = '[{}/{}] loss {:2.4f} acc {:2.4f} n_trees {:2.4f} n_params {:2.4f} time_item {:2.4f}'.format(
-                            epoch, 
-                            epochs-1, 
-                            epoch_loss/batch_cnt, 
-                            sum_accuracy/batch_cnt,
-                            n_trees/batch_cnt,
-                            n_params/batch_cnt,
-                            epoch_time / batch_cnt
-                        )
-                    pbar.set_description(desc)
+                if self.eval_every_epochs is not None and epoch % self.eval_every_epochs == 0 and self.out_path is not None:
+                    np.save(os.path.join(self.out_path, "epoch_{}.npy".format(epoch)), metrics, allow_pickle=True)

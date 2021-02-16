@@ -1,6 +1,7 @@
 import numpy as np
 from joblib import Parallel, delayed
 import numbers
+from sklearn.metrics import accuracy_score
 
 from scipy.special import softmax
 from sklearn.tree import DecisionTreeClassifier
@@ -35,6 +36,7 @@ class PyBiasedProxEnsemble(OnlineLearner):
                 scale_batch = 0,
                 var_batch = 1.0,
                 n_jobs = 1,
+                update_trees = False,
                 *args, **kwargs
                 ):
 
@@ -82,7 +84,8 @@ class PyBiasedProxEnsemble(OnlineLearner):
         self.estimators_ = []
         self.estimator_weights_ = []
         self.dt_seed = self.seed
-    
+        self.update_trees = update_trees
+
     def _individual_proba(self, X):
         assert self.estimators_ is not None, "Call fit before calling predict_proba!"
         # def single_predict_proba(h,X):
@@ -121,39 +124,39 @@ class PyBiasedProxEnsemble(OnlineLearner):
             all_proba = self._individual_proba(data)
             output = self._combine_proba(all_proba)
 
-        # Compute the appropriate loss. 
-        if self.loss == "mse":
-            target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
-            loss = (output - target_one_hot) * (output - target_one_hot)
-            loss_deriv = 2 * (output - target_one_hot)
-        elif self.loss == "cross-entropy":
-            target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
-            p = softmax(output, axis=1)
-            loss = -target_one_hot*np.log(p + 1e-7)
-            m = target.shape[0]
-            loss_deriv = softmax(output, axis=1)
-            loss_deriv[range(m),target_one_hot.argmax(axis=1)] -= 1
-        elif self.loss == "hinge2":
-            target_one_hot = np.array( [ [1.0 if y == i else -1.0 for i in range(self.n_classes_)] for y in target] )
-            zeros = np.zeros_like(target_one_hot)
-            loss = np.maximum(1.0 - target_one_hot * output, zeros)**2
-            loss_deriv = - 2 * target_one_hot * np.maximum(1.0 - target_one_hot * output, zeros) 
-        else:
-            raise "Currently only the losses {{cross-entropy, mse, hinge2}} are supported, but you provided: {}".format(self.loss)
-        
-        # Compute the appropriate ensemble_regularizer
-        if self.ensemble_regularizer == "L0":
-            loss = np.mean(loss) + self.l_ensemble_reg * np.linalg.norm(self.estimator_weights_,0)
-        elif self.ensemble_regularizer == "L1":
-            loss = np.mean(loss) + self.l_ensemble_reg * np.linalg.norm(self.estimator_weights_,1)
-        else:
-            loss = np.mean(loss) 
-        
-        # Compute the appropriate tree_regularizer
-        if self.tree_regularizer == "node":
-            loss += self.l_tree_reg * np.sum( [ (w * est.tree_.node_count) for w, est in zip(self.estimator_weights_, self.estimators_)] )
-        
         if train:
+            # Compute the appropriate loss. 
+            if self.loss == "mse":
+                target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
+                loss = (output - target_one_hot) * (output - target_one_hot)
+                loss_deriv = 2 * (output - target_one_hot)
+            elif self.loss == "cross-entropy":
+                target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
+                p = softmax(output, axis=1)
+                loss = -target_one_hot*np.log(p + 1e-7)
+                m = target.shape[0]
+                loss_deriv = softmax(output, axis=1)
+                loss_deriv[range(m),target_one_hot.argmax(axis=1)] -= 1
+            elif self.loss == "hinge2":
+                target_one_hot = np.array( [ [1.0 if y == i else -1.0 for i in range(self.n_classes_)] for y in target] )
+                zeros = np.zeros_like(target_one_hot)
+                loss = np.maximum(1.0 - target_one_hot * output, zeros)**2
+                loss_deriv = - 2 * target_one_hot * np.maximum(1.0 - target_one_hot * output, zeros) 
+            else:
+                raise "Currently only the losses {{cross-entropy, mse, hinge2}} are supported, but you provided: {}".format(self.loss)
+            
+            # Compute the appropriate ensemble_regularizer
+            if self.ensemble_regularizer == "L0":
+                loss = np.mean(loss) + self.l_ensemble_reg * np.linalg.norm(self.estimator_weights_,0)
+            elif self.ensemble_regularizer == "L1":
+                loss = np.mean(loss) + self.l_ensemble_reg * np.linalg.norm(self.estimator_weights_,1)
+            else:
+                loss = np.mean(loss) 
+            
+            # Compute the appropriate tree_regularizer
+            if self.tree_regularizer == "node":
+                loss += self.l_tree_reg * np.sum( [ (w * est.tree_.node_count) for w, est in zip(self.estimator_weights_, self.estimators_)] )
+
             if len(self.estimators_) > 0:
                 # Compute the gradient for the loss
                 directions = np.mean(all_proba*loss_deriv,axis=(1,2))
@@ -168,6 +171,17 @@ class PyBiasedProxEnsemble(OnlineLearner):
                 # and thus performed _after_ this update.
                 tmp_w = self.estimator_weights_ - self.step_size*directions - self.step_size*node_deriv
                 
+                if self.update_trees:
+                    # compute direction per tree
+                    # TODO FIX this for n_classes != 2
+                    tree_deriv = all_proba*loss_deriv
+                    for i, h in enumerate(self.estimators_):
+                        # find idx
+                        idx = h.apply(data)
+                        # update model
+                        #h.tree_.value[idx] = h.tree_.value[idx] - self.step_size*h.tree_.value[idx]*tree_deriv[i,:,np.newaxis]
+                        h.tree_.value[idx] = h.tree_.value[idx] - self.step_size*tree_deriv[i,:,np.newaxis]
+
                 # Compute the prox step. 
                 if self.ensemble_regularizer == "L0":
                     tmp = np.sqrt(2 * self.l_ensemble_reg * self.step_size)
@@ -197,17 +211,24 @@ class PyBiasedProxEnsemble(OnlineLearner):
                 data = np.vstack([data, tmp_data])
                 target = np.hstack([target, tmp_label])
 
-
             if (len(set(target)) > 1):
                 # Fit a new tree on the current batch. 
                 # class_weight = {}
                 # for i in range(self.n_classes_):
                 #     class_weight[i] = 1.0
 
-                tree = DecisionTreeClassifier(max_depth = self.max_depth, random_state=self.dt_seed, splitter="best", criterion="entropy")
+                #tree = DecisionTreeClassifier(max_depth = self.max_depth, random_state=self.dt_seed, splitter="best", criterion="entropy")
+                tree = DecisionTreeClassifier(max_depth = self.max_depth, random_state=self.dt_seed, splitter="random", criterion="gini")
                 #, class_weight = class_weight) #, max_features=1)
                 self.dt_seed += 1
                 tree.fit(data, target)
+
+                # SKlearn stores the raw counts instead of probabilities. For SGD its better to have the 
+                # probabilities for numerical stability. 
+                # tree.tree_.value is not writeable, but we can modify the values inplace. Thus we 
+                # use [:] to copy the array into the normalized array. Also tree.tree_.value has a strange shape
+                # (batch_size, 1, n_classes)
+                # tree.tree_.value[:] = tree.tree_.value / tree.tree_.value.sum(axis=(1,2))[:,np.newaxis,np.newaxis]
 
                 if len(self.estimator_weights_) == 0:
                     tmp_w = np.array([1.0])
@@ -248,11 +269,10 @@ class PyBiasedProxEnsemble(OnlineLearner):
             self.estimators_ = new_est
             self.estimator_weights_ = new_w
 
-            n_updates = 1
-        else:
-            n_updates = 0
-            
-        return {"loss": loss, "num_trees": self.num_trees(), "num_parameters":self.num_parameters()}, output, n_updates
+        accuracy = (output.argmax(axis=1) == target) * 100.0
+        n_trees = [self.num_trees() for _ in range(data.shape[0])]
+        n_param = [self.num_parameters() for _ in range(data.shape[0])]
+        return {"accuracy": accuracy, "num_trees": n_trees, "num_parameters" : n_param}, output
 
     def num_trees(self):
         return np.count_nonzero(self.estimator_weights_)

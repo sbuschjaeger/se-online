@@ -122,46 +122,42 @@ elif args.multi:
         "post": post,
         "fit": fit,
         "backend": "multiprocessing",
-        "num_cpus":9,
+        "num_cpus":8,
         "verbose":True
     }
 else:
     exit(1)
 
-# print("Loading data")
-# data, meta = loadarff("covtypeNorm.arff")
-
-# print("Mapping nominal attributes")
-# Xdict = {}
-# for cname, ctype in zip(meta.names(), meta.types()):
-#     if cname == "class":
-#         enc = LabelEncoder()
-#         Xdict["label"] = enc.fit_transform(data[cname])
-#     elif ctype == "numeric":
-#         Xdict[cname] = data[cname]
-#     else:
-#         enc = OneHotEncoder(sparse=False)
-#         tmp = enc.fit_transform(data[cname].reshape(-1, 1))
-#         for i in range(tmp.shape[1]):
-#             Xdict[cname + "_" + str(i)] = tmp[:,i]
-
-# df = pd.DataFrame(Xdict)
-# Y = df["label"].values.astype(np.int32)
-# df = df.drop("label", axis=1)
-# is_nominal = (df.nunique() == 2).values
-# nominal_names = [name for nom,name in zip(is_nominal, df.columns.values) if nom ]
-# # print(nominal_names)
-
-# scaler = MinMaxScaler()
-# X = scaler.fit_transform(df.values.astype(np.float64))
-# np.save("X.npy", X, allow_pickle=True)
-# np.save("Y.npy", Y, allow_pickle=True)
-# np.save("nominal_names.npy", nominal_names, allow_pickle=True)
-
 print("Loading data")
-X = np.load("X.npy", allow_pickle=True)
-Y = np.load("Y.npy", allow_pickle=True)
-nominal_names = np.load("nominal_names.npy", allow_pickle=True)
+data, meta = loadarff("elecNormNew.arff")
+
+print("Mapping nominal attributes")
+Xdict = {}
+for cname, ctype in zip(meta.names(), meta.types()):
+    if cname == "class":
+        enc = LabelEncoder()
+        Xdict["label"] = enc.fit_transform(data[cname])
+    elif ctype == "numeric":
+        Xdict[cname] = data[cname]
+    else:
+        enc = OneHotEncoder(sparse=False)
+        tmp = enc.fit_transform(data[cname].reshape(-1, 1))
+        for i in range(tmp.shape[1]):
+            Xdict[cname + "_" + str(i)] = tmp[:,i]
+
+df = pd.DataFrame(Xdict)
+Y = df["label"].values.astype(np.int32)
+df = df.drop("label", axis=1)
+is_nominal = (df.nunique() == 2).values
+nominal_names = [name for nom,name in zip(is_nominal, df.columns.values) if nom ]
+# print(nominal_names)
+
+scaler = MinMaxScaler()
+X = scaler.fit_transform(df.values.astype(np.float64))
+np.save("X.npy", X, allow_pickle=True)
+np.save("Y.npy", Y, allow_pickle=True)
+np.save("nominal_names.npy", nominal_names, allow_pickle=True)
+
 
 experiment_cfg = {
     "X":X,
@@ -205,6 +201,29 @@ for bs in [8,16,32]:
                             "scale_batch":0,
                             "var_batch":0.001,
                             "seed":experiment_cfg["seed"],
+                            "update_trees":False,
+                            **online_learner_cfg
+                        },
+                        **experiment_cfg
+                    }
+                )
+
+                models.append(
+                    {
+                        "model":PyBiasedProxEnsemble,
+                        "model_params": {
+                            "loss":"cross-entropy",
+                            "step_size":lr, #1e-3,
+                            "ensemble_regularizer":"hard-L1",
+                            "l_ensemble_reg":T,
+                            "tree_regularizer":None,
+                            "l_tree_reg":0,
+                            "normalize_weights":True,
+                            "init_weight":"average",
+                            "max_depth":d,
+                            "scale_batch":0,
+                            "var_batch":0.001,
+                            "seed":experiment_cfg["seed"],
                             "update_trees":True,
                             **online_learner_cfg
                         },
@@ -212,46 +231,22 @@ for bs in [8,16,32]:
                     }
                 )
 
-                # models.append(
-                #     {
-                #         "model":PyBiasedProxEnsemble,
-                #         "model_params": {
-                #             "loss":"cross-entropy",
-                #             "step_size":lr, #1e-3,
-                #             "ensemble_regularizer":"hard-L1",
-                #             "l_ensemble_reg":T,
-                #             "tree_regularizer":None,
-                #             "l_tree_reg":0,
-                #             "normalize_weights":True,
-                #             "init_weight":"average",
-                #             "max_depth":d,
-                #             "scale_batch":0,
-                #             "var_batch":0.001,
-                #             "seed":experiment_cfg["seed"],
-                #             "update_trees":True,
-                #             **online_learner_cfg
-                #         },
-                #         **experiment_cfg
-                #     }
-                # )
+        models.append(
+            {
+                "model":JaxModel,
+                "model_params": {
+                    "loss":"cross-entropy",
+                    "step_size":1e-3,
+                    "max_depth":d,
+                    "n_trees":10,
+                    **online_learner_cfg
+                },
+                **experiment_cfg
+            }
+        )
 
-online_learner_cfg["batch_size"] = 32
-for d in [2,4,6,8]:
-    models.append(
-        {
-            "model":JaxModel,
-            "model_params": {
-                "loss":"cross-entropy",
-                "step_size":1e-3,
-                "max_depth":d,
-                "n_trees":10,
-                **online_learner_cfg
-            },
-            **experiment_cfg
-        }
-    )
 
-online_learner_cfg["batch_size"] = 1
+online_learner_cfg["batch_size"] = 2
 for lp in ["mc", "nba"]:
     models.append(
         {
@@ -331,7 +326,6 @@ for lp in ["mc", "nba"]:
         }
     )
 
-
-#random.shuffle(models)
+random.shuffle(models)
 
 run_experiments(basecfg, models)
