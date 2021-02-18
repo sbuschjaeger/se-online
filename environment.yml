@@ -2,12 +2,12 @@ name: psgd-ensemble
 channels:
   - conda-forge
 dependencies:
-  - xsimd
-  - xtl
-  - xtensor
-  - cmake
-  - gcc_linux-64
-  - gxx_linux-64
+  # - xsimd
+  # - xtl
+  # - xtensor
+  # - cmake
+  # - gcc_linux-64
+  # - gxx_linux-64
   - python=3.8
   - numpy
   - pylint
@@ -24,6 +24,6 @@ dependencies:
     - tqdm
     - ray
     - git+https://github.com/online-ml/river
-    # - -e file:experiment_runner
-  #    - -e file:.
+    - -e file:experiment_runner
+    - -e file:.
     
