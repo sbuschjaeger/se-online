@@ -9,3 +9,7 @@ PyBPE.egg-info/*
 *trn
 *tst
 *.arff
+*.dat
+*.csv
+*.cls
+*.zip
