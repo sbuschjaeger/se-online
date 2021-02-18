@@ -128,40 +128,13 @@ elif args.multi:
 else:
     exit(1)
 
-# print("Loading data")
-# data, meta = loadarff("covtypeNorm.arff")
-
-# print("Mapping nominal attributes")
-# Xdict = {}
-# for cname, ctype in zip(meta.names(), meta.types()):
-#     if cname == "class":
-#         enc = LabelEncoder()
-#         Xdict["label"] = enc.fit_transform(data[cname])
-#     elif ctype == "numeric":
-#         Xdict[cname] = data[cname]
-#     else:
-#         enc = OneHotEncoder(sparse=False)
-#         tmp = enc.fit_transform(data[cname].reshape(-1, 1))
-#         for i in range(tmp.shape[1]):
-#             Xdict[cname + "_" + str(i)] = tmp[:,i]
-
-# df = pd.DataFrame(Xdict)
-# Y = df["label"].values.astype(np.int32)
-# df = df.drop("label", axis=1)
-# is_nominal = (df.nunique() == 2).values
-# nominal_names = [name for nom,name in zip(is_nominal, df.columns.values) if nom ]
-# # print(nominal_names)
-
-# scaler = MinMaxScaler()
-# X = scaler.fit_transform(df.values.astype(np.float64))
-# np.save("X.npy", X, allow_pickle=True)
-# np.save("Y.npy", Y, allow_pickle=True)
-# np.save("nominal_names.npy", nominal_names, allow_pickle=True)
-
 print("Loading data")
-X = np.load("X.npy", allow_pickle=True)
-Y = np.load("Y.npy", allow_pickle=True)
-nominal_names = np.load("nominal_names.npy", allow_pickle=True)
+df = pd.read_csv("data.csv")
+Y = df["Occupancy"].values.astype(np.int32)
+df = df.drop(["date", "Occupancy"], axis=1)
+
+scaler = MinMaxScaler()
+X = scaler.fit_transform(df.values.astype(np.float64))
 
 experiment_cfg = {
     "X":X,
@@ -240,8 +213,7 @@ for lp in ["nba","mc"]:
                 "river_model":river.tree.HoeffdingTreeClassifier(
                     grace_period = 50,
                     split_confidence = 0.01,
-                    leaf_prediction = lp,
-                    nominal_attributes = nominal_names
+                    leaf_prediction = lp
                 ),
                 **online_learner_cfg
             },
@@ -249,8 +221,7 @@ for lp in ["nba","mc"]:
             "river_model_params" : {
                 "grace_period" : 50,
                 "split_confidence" : 0.01,
-                "leaf_prediction" : lp,
-                "nominal_attributes" : nominal_names
+                "leaf_prediction" : lp
             },
             **experiment_cfg
         }
@@ -265,8 +236,7 @@ for lp in ["nba","mc"]:
                     #split_confidence = 1e-6,
                     split_confidence = 0.01,
                     #min_samples_reevaluate = 300,
-                    leaf_prediction = lp,
-                    nominal_attributes = nominal_names
+                    leaf_prediction = lp
                     #max_depth=35
                 ),
                 **online_learner_cfg
@@ -274,8 +244,7 @@ for lp in ["nba","mc"]:
             "river_model_params" : {
                 "grace_period" : 50,
                 "split_confidence" : 0.01,
-                "leaf_prediction" : lp,
-                "nominal_attributes" : nominal_names
+                "leaf_prediction" : lp
             },
             **experiment_cfg
         }
@@ -292,8 +261,7 @@ for lp in ["nba","mc"]:
                         #split_confidence = 1e-6,
                         split_confidence = 0.01,
                         #min_samples_reevaluate = 300,
-                        leaf_prediction = lp,
-                        nominal_attributes = nominal_names
+                        leaf_prediction = lp
                         #max_depth=35
                     )
                 ),
@@ -302,8 +270,7 @@ for lp in ["nba","mc"]:
             "river_model_params" : {
                 "grace_period" : 50,
                 "split_confidence" : 0.01,
-                "leaf_prediction" : lp,
-                "nominal_attributes" : nominal_names
+                "leaf_prediction" : lp
             },
             **experiment_cfg
         }

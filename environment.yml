@@ -8,7 +8,7 @@ dependencies:
   - cmake
   - gcc_linux-64
   - gxx_linux-64
-  - python=3.7 
+  - python=3.8
   - numpy
   - pylint
   - scikit-learn
@@ -17,12 +17,13 @@ dependencies:
   - setuptools
   - plotly
   - jupyter
+  - tqdm
   - pip:
     - jax
     - jaxlib
     - tqdm
     - ray
-    - git+https://github.com/online-ml/river --upgrade
-    - -e file:experiment_runner
+    - git+https://github.com/online-ml/river
+    # - -e file:experiment_runner
   #    - -e file:.
     

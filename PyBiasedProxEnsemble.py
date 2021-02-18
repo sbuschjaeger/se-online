@@ -33,8 +33,6 @@ class PyBiasedProxEnsemble(OnlineLearner):
                 l_tree_reg = 0,
                 normalize_weights = False,
                 init_weight = 0,
-                scale_batch = 0,
-                var_batch = 1.0,
                 n_jobs = 1,
                 update_trees = False,
                 *args, **kwargs
@@ -79,8 +77,6 @@ class PyBiasedProxEnsemble(OnlineLearner):
         self.normalize_weights = normalize_weights
         self.max_depth = max_depth
         self.n_jobs = n_jobs
-        self.scale_batch = scale_batch
-        self.var_batch = var_batch
         self.estimators_ = []
         self.estimator_weights_ = []
         self.dt_seed = self.seed
@@ -173,14 +169,14 @@ class PyBiasedProxEnsemble(OnlineLearner):
                 
                 if self.update_trees:
                     # compute direction per tree
-                    # TODO FIX this for n_classes != 2
                     tree_deriv = all_proba*loss_deriv
                     for i, h in enumerate(self.estimators_):
                         # find idx
                         idx = h.apply(data)
                         # update model
                         #h.tree_.value[idx] = h.tree_.value[idx] - self.step_size*h.tree_.value[idx]*tree_deriv[i,:,np.newaxis]
-                        h.tree_.value[idx] = h.tree_.value[idx] - self.step_size*tree_deriv[i,:,np.newaxis]
+                        step = self.step_size*tree_deriv[i,:,np.newaxis]
+                        h.tree_.value[idx] = h.tree_.value[idx] - step[:,:,h.classes_.astype(int)]
 
                 # Compute the prox step. 
                 if self.ensemble_regularizer == "L0":
@@ -195,21 +191,6 @@ class PyBiasedProxEnsemble(OnlineLearner):
                     tmp_w = np.array([w if i in top_K else 0 for i,w in enumerate(tmp_w)])
             else:
                 tmp_w = []
-            
-            # add random gaussian noise to the current batch so increase the number of training data.
-            if self.scale_batch > 0 and self.var_batch > 0:
-                tmp_data = []
-                tmp_label = []
-                for i in range(int(self.scale_batch * data.shape[0])):
-                    xidx = np.random.choice(range(data.shape[0]))
-                    n = np.random.normal(loc = 0.0, scale = self.var_batch, size = 1)
-                    tmp_data.append(data[xidx,:] + n)
-                    tmp_label.append(target[xidx])
-
-                tmp_data = np.array(tmp_data)
-                tmp_label = np.array(tmp_label)
-                data = np.vstack([data, tmp_data])
-                target = np.hstack([target, tmp_label])
 
             if (len(set(target)) > 1):
                 # Fit a new tree on the current batch. 
@@ -248,7 +229,7 @@ class PyBiasedProxEnsemble(OnlineLearner):
             # If set, normalize the weights. Note that we use the support of tmp_w for the projection onto the probability simplex
             # as described in http://proceedings.mlr.press/v28/kyrillidis13.pdf
             # Thus, we first need to extract the nonzero weights, project these and then copy them back into corresponding array
-            if self.normalize_weights:
+            if self.normalize_weights and len(tmp_w) > 0:
                 nonzero_idx = np.nonzero(tmp_w)[0]
                 nonzero_w = tmp_w[nonzero_idx]
                 nonzero_w = to_prob_simplex(nonzero_w)

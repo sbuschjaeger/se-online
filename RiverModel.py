@@ -27,12 +27,14 @@ class RiverModel(OnlineLearner):
             print("WARNING: sliding_window should be True for RiverModel, but it was set to False. Fixing it for you.")
             kwargs["sliding_window"] = True
 
-        if "batch_size" in args and args["batch_size"] > 1:
-            print("WARNING: batch_size should be 1 for RiverModel for optimal performance, but was {}. Fixing it for you.".format(args["batch_size"]))
+        if "batch_size" in args and args["batch_size"] >= 1:
+            if args["batch_size"] > 1:
+                print("WARNING: batch_size should be 1 for RiverModel for optimal performance, but was {}. Fixing it for you.".format(args["batch_size"]))
             args.pop("batch_size")
 
-        if "batch_size" in kwargs and kwargs["batch_size"] > 1:
-            print("WARNING: batch_size should be 1 for RiverModel for optimal performance, but was {}. Fixing it for you.".format(kwargs["batch_size"]))
+        if "batch_size" in kwargs and kwargs["batch_size"] >= 1:
+            if kwargs["batch_size"] > 1:
+                print("WARNING: batch_size should be 1 for RiverModel for optimal performance, but was {}. Fixing it for you.".format(kwargs["batch_size"]))
             kwargs.pop("batch_size")
 
         super().__init__(batch_size = 1, *args, **kwargs)

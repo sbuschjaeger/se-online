@@ -11,5 +11,9 @@ PyBPE.egg-info/*
 *.arff
 *.dat
 *.csv
-*.cls
+*.xls
 *.zip
+S1_Dataset
+S2_Dataset
+*.txt
+*.npy

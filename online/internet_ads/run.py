@@ -104,14 +104,14 @@ elif args.multi:
         "post": post,
         "fit": fit,
         "backend": "multiprocessing",
-        "num_cpus":8,
+        "num_cpus":9,
         "verbose":True
     }
 else:
     exit(1)
 
 print("Loading data")
-data, meta = loadarff("elecNormNew.arff")
+data, meta = loadarff("internet_ads.arff")
 
 print("Mapping nominal attributes")
 Xdict = {}
@@ -135,10 +135,6 @@ nominal_names = [name for nom,name in zip(is_nominal, df.columns.values) if nom 
 
 scaler = MinMaxScaler()
 X = scaler.fit_transform(df.values.astype(np.float64))
-# np.save("X.npy", X, allow_pickle=True)
-# np.save("Y.npy", Y, allow_pickle=True)
-# np.save("nominal_names.npy", nominal_names, allow_pickle=True)
-print(X.shape)
 
 experiment_cfg = {
     "X":X,
@@ -259,7 +255,7 @@ models.extend(
                         "grace_period" : Variation([10,50,100,200,500]),
                         "split_confidence" : Variation([0.1, 0.01, 0.001]),
                         "leaf_prediction" : Variation(["mc", "nba"]),
-                        "nominal_attributes" : nominal_names
+                    "nominal_attributes" : nominal_names
                     }
                 },
                 **online_learner_cfg
@@ -283,7 +279,7 @@ models.extend(
                         "grace_period" : Variation([10,50,100,200,500]),
                         "split_confidence" : Variation([0.1, 0.01, 0.001]),
                         "leaf_prediction" : Variation(["mc", "nba"]),
-                        "nominal_attributes" : nominal_names
+                    "nominal_attributes" : nominal_names
                     }
                 },
                 **online_learner_cfg
@@ -307,7 +303,7 @@ models.extend(
                         "grace_period" : Variation([10,50,100,200,500]),
                         "split_confidence" : Variation([0.1, 0.01, 0.001]),
                         "leaf_prediction" : Variation(["mc", "nba"]),
-                        "nominal_attributes" : nominal_names
+                    "nominal_attributes" : nominal_names
                     }
                 },
                 **online_learner_cfg
@@ -331,7 +327,7 @@ models.extend(
                         "grace_period" : Variation([10,50,100,200,500]),
                         "split_confidence" : Variation([0.1, 0.01, 0.001]),
                         "leaf_prediction" : Variation(["mc", "nba"]),
-                        "nominal_attributes" : nominal_names
+                    "nominal_attributes" : nominal_names
                     }
                 },
                 **online_learner_cfg

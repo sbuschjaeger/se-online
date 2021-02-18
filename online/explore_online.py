@@ -14,20 +14,37 @@ def read_jsonl(path):
 
     return json_normalize(data)
 
+name_mapping = {
+    "SRP":"SRP",
+    "ExtremelyFastDecisionTreeClassifier":"ET",
+    "HoeffdingTreeClassifier":"HT",
+    "AdaptiveRandomForestClassifier":"ARF",
+    "AdaBoostClassifier":"AB",
+    "BaggingClassifier":"Bag",
+    "PyBiasedProxEnsemble":"PE",
+    "JaxModel":"SDT"
+}
+
 def nice_name(row):
     if row["model"] == "RiverModel":
-        model_name = "{} with {} mode {}".format(row["model"], row["model_params.river_model"], row["river_model_params.leaf_prediction"])
-    elif (row["model"] == "PyBiasedProxEnsemble"):
-        model_name = "{} with d = {}, R1 = {}, λ1 = {}, R2 = {}, λ2 = {}, bs = {}, lr = {}, lt {}".format(row["model"], row.get("model_params.max_depth", None), row.get("model_params.ensemble_regularizer", "None"), row.get("model_params.l_ensemble_reg", "None"), row.get("model_params.tree_regularizer", "None"), row.get("model_params.l_tree_reg", "None"), row.get("model_params.batch_size", None), row.get("model_params.step_size", None), row.get("model_params.update_trees", None))
-    elif row["model"] == "JaxModel":
-        model_name = "{} with T = {}, d = {}, with temp_scaling = {}".format(row["model"], row["model_params.n_trees"], row["model_params.max_depth"], row.get("model_params.temp_scaling", None) )
+        model_name = name_mapping[row["model_params.river_model"]]
+        if row["model_params.river_model"] in ["SRP","BaggingClassifier", "AdaBoostClassifier"]:
+            model_name += " + " + name_mapping[row["model_params.river_params.model"]]
     else:
-        model_name = "{} with T = {}, d = {}, modes = {}/{}, stepsize = {}".format(row["model"], row["max_trees"], row["max_depth"], row["init_mode"],row["next_mode"], row["step_size"])
+        model_name = name_mapping[row["model"]]
+    # elif (row["model"] == "PyBiasedProxEnsemble"):
+    #     model_name = "{} with d = {}, R1 = {}, λ1 = {}, R2 = {}, λ2 = {}, bs = {}, lr = {}, lt {}".format(row["model"], row.get("model_params.max_depth", None), row.get("model_params.ensemble_regularizer", "None"), row.get("model_params.l_ensemble_reg", "None"), row.get("model_params.tree_regularizer", "None"), row.get("model_params.l_tree_reg", "None"), row.get("model_params.batch_size", None), row.get("model_params.step_size", None), row.get("model_params.update_trees", None))
+    # elif row["model"] == "JaxModel":
+    #     model_name = "{} with T = {}, d = {}, with temp_scaling = {}".format(row["model"], row["model_params.n_trees"], row["model_params.max_depth"], row.get("model_params.temp_scaling", None) )
+    # else:
+    #     model_name = "{} with T = {}, d = {}, modes = {}/{}, stepsize = {}".format(row["model"], row["max_trees"], row["max_depth"], row["init_mode"],row["next_mode"], row["step_size"])
     
     return model_name
 
-#dataset = "elec"
-dataset = "covtype"
+dataset = "elec"
+#dataset = "covtype"
+#dataset = "activity"
+#dataset = "gas-sensor"
 dataset = os.path.join(dataset, "results")
 all_subdirs = [os.path.join(dataset,d) for d in os.listdir(dataset) if os.path.isdir(os.path.join(dataset, d))]
 #print(all_subdirs)
@@ -43,9 +60,9 @@ mean_accuracy = []
 mean_loss = []
 mean_params = []
 mean_time = []
-for m in df["nice_name"].values:
-    experiment_path = df.loc[ df["nice_name"] == m ]["out_path"].values[0]
-    metrics = np.load(os.path.join(experiment_path, "epoch_0.npy"), allow_pickle=True).item()
+for index, row in df.iterrows(): 
+    experiment_path = row["out_path"]
+    metrics = np.load(os.path.join(row["out_path"], "epoch_0.npy"), allow_pickle=True).item()
     traindf = pd.DataFrame(metrics)
     mean_accuracy.append(np.mean(metrics["accuracy"]))
     mean_params.append(np.mean(metrics["num_parameters"]))
@@ -61,8 +78,18 @@ df["mean_params"] = mean_params
 tabledf = df[["nice_name", "mean_accuracy", "mean_params", "scores.mean_fit_time"]]
 tabledf = tabledf.sort_values(by=['mean_accuracy'], ascending = False)
 #display(tabledf)
+# display(HTML(tabledf.to_html()))
 print("Processed {} experiments".format(len(tabledf)))
-display(HTML(tabledf.to_html()))
+print("Experiments per group")
+tmp = tabledf.groupby(['nice_name']).size()
+print(tmp)
+
+idx = tabledf.groupby(['nice_name'])['mean_accuracy'].transform(max) == tabledf['mean_accuracy']
+shortdf = tabledf[idx]
+
+print("Best configuration per group")
+
+display(HTML(shortdf.to_html()))
 
 # %%
 import plotly.graph_objects as go

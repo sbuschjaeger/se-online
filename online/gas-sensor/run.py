@@ -104,41 +104,22 @@ elif args.multi:
         "post": post,
         "fit": fit,
         "backend": "multiprocessing",
-        "num_cpus":8,
+        "num_cpus":9,
         "verbose":True
     }
 else:
     exit(1)
 
 print("Loading data")
-data, meta = loadarff("elecNormNew.arff")
+dfs = []
+for i in range(1,11):
+    dfs.append( pd.read_csv(os.path.join("Dataset", "batch{}.dat".format(i)), header=None, delimiter = " ") )
+df = pd.concat(dfs, axis=0, ignore_index=True)
 
-print("Mapping nominal attributes")
-Xdict = {}
-for cname, ctype in zip(meta.names(), meta.types()):
-    if cname == "class":
-        enc = LabelEncoder()
-        Xdict["label"] = enc.fit_transform(data[cname])
-    elif ctype == "numeric":
-        Xdict[cname] = data[cname]
-    else:
-        enc = OneHotEncoder(sparse=False)
-        tmp = enc.fit_transform(data[cname].astype('<f8').reshape(-1, 1))
-        for i in range(tmp.shape[1]):
-            Xdict[cname + "_" + str(i)] = tmp[:,i]
-
-df = pd.DataFrame(Xdict)
-Y = df["label"].values.astype(np.int32)
-df = df.drop("label", axis=1)
-is_nominal = (df.nunique() == 2).values
-nominal_names = [name for nom,name in zip(is_nominal, df.columns.values) if nom ]
-
+Y = df[0].values.astype(np.int32) - 1
+df = df.drop([0], axis=1)
 scaler = MinMaxScaler()
 X = scaler.fit_transform(df.values.astype(np.float64))
-# np.save("X.npy", X, allow_pickle=True)
-# np.save("Y.npy", Y, allow_pickle=True)
-# np.save("nominal_names.npy", nominal_names, allow_pickle=True)
-print(X.shape)
 
 experiment_cfg = {
     "X":X,
@@ -215,8 +196,7 @@ models.extend(
                 "river_params": {
                     "grace_period" : Variation([10,50,100,200,500]),
                     "split_confidence" : Variation([0.1, 0.01, 0.001]),
-                    "leaf_prediction" : Variation(["mc", "nba"]),
-                    "nominal_attributes" : nominal_names
+                    "leaf_prediction" : Variation(["mc", "nba"])
                 },
                 **online_learner_cfg
             },
@@ -235,8 +215,7 @@ models.extend(
                 "river_params": {
                     "grace_period" : Variation([10,50,100,200,500]),
                     "split_confidence" : Variation([0.1, 0.01, 0.001]),
-                    "leaf_prediction" : Variation(["mc", "nba"]),
-                    "nominal_attributes" : nominal_names
+                    "leaf_prediction" : Variation(["mc", "nba"])
                 },
                 **online_learner_cfg
             },
@@ -258,8 +237,7 @@ models.extend(
                     "model_params": {
                         "grace_period" : Variation([10,50,100,200,500]),
                         "split_confidence" : Variation([0.1, 0.01, 0.001]),
-                        "leaf_prediction" : Variation(["mc", "nba"]),
-                        "nominal_attributes" : nominal_names
+                        "leaf_prediction" : Variation(["mc", "nba"])
                     }
                 },
                 **online_learner_cfg
@@ -282,8 +260,7 @@ models.extend(
                     "model_params": {
                         "grace_period" : Variation([10,50,100,200,500]),
                         "split_confidence" : Variation([0.1, 0.01, 0.001]),
-                        "leaf_prediction" : Variation(["mc", "nba"]),
-                        "nominal_attributes" : nominal_names
+                        "leaf_prediction" : Variation(["mc", "nba"])
                     }
                 },
                 **online_learner_cfg
@@ -306,8 +283,7 @@ models.extend(
                     "model_params": {
                         "grace_period" : Variation([10,50,100,200,500]),
                         "split_confidence" : Variation([0.1, 0.01, 0.001]),
-                        "leaf_prediction" : Variation(["mc", "nba"]),
-                        "nominal_attributes" : nominal_names
+                        "leaf_prediction" : Variation(["mc", "nba"])
                     }
                 },
                 **online_learner_cfg
@@ -330,8 +306,7 @@ models.extend(
                     "model_params": {
                         "grace_period" : Variation([10,50,100,200,500]),
                         "split_confidence" : Variation([0.1, 0.01, 0.001]),
-                        "leaf_prediction" : Variation(["mc", "nba"]),
-                        "nominal_attributes" : nominal_names
+                        "leaf_prediction" : Variation(["mc", "nba"])
                     }
                 },
                 **online_learner_cfg
@@ -354,8 +329,7 @@ models.extend(
                     "model_params": {
                         "grace_period" : Variation([10,50,100,200,500]),
                         "split_confidence" : Variation([0.1, 0.01, 0.001]),
-                        "leaf_prediction" : Variation(["mc", "nba"]),
-                        "nominal_attributes" : nominal_names
+                        "leaf_prediction" : Variation(["mc", "nba"])
                     }
                 },
                 **online_learner_cfg
@@ -378,8 +352,7 @@ models.extend(
                     "model_params": {
                         "grace_period" : Variation([10,50,100,200,500]),
                         "split_confidence" : Variation([0.1, 0.01, 0.001]),
-                        "leaf_prediction" : Variation(["mc", "nba"]),
-                        "nominal_attributes" : nominal_names
+                        "leaf_prediction" : Variation(["mc", "nba"])
                     }
                 },
                 **online_learner_cfg
@@ -401,8 +374,7 @@ models.extend(
                     "split_confidence" : Variation([0.1, 0.01, 0.001]),
                     "leaf_prediction" : Variation(["mc", "nba"]),
                     "n_models":Variation([2,4,8,16,32]),
-                    "max_features":Variation([0.25,0.5,0.75]),
-                    "nominal_attributes" : nominal_names
+                    "max_features":Variation([0.25,0.5,0.75])
                 },
                 **online_learner_cfg
             },
