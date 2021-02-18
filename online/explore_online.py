@@ -41,10 +41,10 @@ def nice_name(row):
     
     return model_name
 
-dataset = "elec"
+#dataset = "elec"
 #dataset = "covtype"
 #dataset = "activity"
-#dataset = "gas-sensor"
+dataset = "gas-sensor"
 dataset = os.path.join(dataset, "results")
 all_subdirs = [os.path.join(dataset,d) for d in os.listdir(dataset) if os.path.isdir(os.path.join(dataset, d))]
 #print(all_subdirs)
