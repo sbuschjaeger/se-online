@@ -27,10 +27,10 @@ from river.ensemble import AdaptiveRandomForestClassifier
 
 from JaxModel import JaxModel
 
-from experiment_runner.experiment_runner_v2 import run_experiments, Variation, generate_configs
+from experiment_runner.experiment_runner import run_experiments, Variation, generate_configs
 
-from BiasedProxEnsemble import BiasedProxEnsemble
-from SGDEnsemble import SGDEnsemble
+# from BiasedProxEnsemble import BiasedProxEnsemble
+# from SGDEnsemble import SGDEnsemble
 from RiverModel import RiverModel
 from PyBiasedProxEnsemble import PyBiasedProxEnsemble
 
@@ -138,7 +138,7 @@ online_learner_cfg = {
     "eval_every_epochs":1   
 }
 
-n_configs = 50
+n_configs = 200
 np.random.seed(experiment_cfg["seed"])
 
 models = []
@@ -149,17 +149,17 @@ models.extend(
         {
             "model":PyBiasedProxEnsemble,
             "model_params": {
-                "loss":"cross-entropy",
+                "loss":Variation(["cross-entropy","mse"]),
                 "ensemble_regularizer":"hard-L1",
                 "tree_regularizer":None,
                 "l_tree_reg":0,
                 "normalize_weights":True,
                 "init_weight":"average",
                 "seed":experiment_cfg["seed"],
-                "batch_size":Variation([8,16,32,64,128,256]),
+                "batch_size":Variation([4,8,16,32,64,128,256]),
                 "max_depth":Variation([2,3,4,5,6,7,8,9,10]),
-                "step_size":Variation([1e-3,1e-2,1e-1,5e-1,1,2]),
-                "l_ensemble_reg":Variation([16,32,64,128,256]),
+                "step_size":Variation([10,12,15,20]), #1e-1,5e-1,1,2,3,5,7,
+                "l_ensemble_reg":Variation([16,32,64,128,256,512]),
                 "update_trees":Variation([True, False]),
                 **online_learner_cfg
             },
@@ -169,6 +169,7 @@ models.extend(
     )
 )
 
+'''
 models.extend(
     generate_configs(
         {
@@ -383,6 +384,7 @@ models.extend(
         n_configs=n_configs
     )
 )
+'''
 
 random.shuffle(models)
 

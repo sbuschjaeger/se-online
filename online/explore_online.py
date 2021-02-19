@@ -42,9 +42,12 @@ def nice_name(row):
     return model_name
 
 #dataset = "elec"
+#dataset = "internet_ads"
+#dataset = "nomao"
+dataset = "gas-sensor"
+
 #dataset = "covtype"
 #dataset = "activity"
-dataset = "gas-sensor"
 dataset = os.path.join(dataset, "results")
 all_subdirs = [os.path.join(dataset,d) for d in os.listdir(dataset) if os.path.isdir(os.path.join(dataset, d))]
 #print(all_subdirs)
@@ -74,24 +77,73 @@ df["mean_params"] = mean_params
 # df["mean_loss"] = mean_loss
 # df["mean_time"] = mean_time
 
-#tabledf = df[["nice_name", "mean_accuracy", "mean_loss", "mean_params", "mean_time"]]
 tabledf = df[["nice_name", "mean_accuracy", "mean_params", "scores.mean_fit_time"]]
 tabledf = tabledf.sort_values(by=['mean_accuracy'], ascending = False)
-#display(tabledf)
-# display(HTML(tabledf.to_html()))
 print("Processed {} experiments".format(len(tabledf)))
-print("Experiments per group")
-tmp = tabledf.groupby(['nice_name']).size()
-print(tmp)
+display(HTML(tabledf.to_html()))
 
-idx = tabledf.groupby(['nice_name'])['mean_accuracy'].transform(max) == tabledf['mean_accuracy']
-shortdf = tabledf[idx]
+# print("Runtimes")
+# tabledf = tabledf.sort_values(by=['scores.mean_fit_time'], ascending = False)
+# display(HTML(tabledf.to_html()))
 
-print("Best configuration per group")
+# print("Experiments per group")
+# tmp = tabledf.groupby(['nice_name']).size()
+# print(tmp)
 
-display(HTML(shortdf.to_html()))
+# idx = tabledf.groupby(['nice_name'])['mean_accuracy'].transform(max) == tabledf['mean_accuracy']
+# shortdf = tabledf[idx]
+
+# print("Best configuration per group")
+
+# display(HTML(shortdf.to_html()))
+
+
 
 # %%
+import matplotlib.pyplot as plt
+plt.style.use('seaborn-whitegrid')
+import numpy as np
+
+
+def get_pareto(df, columns):
+    first = df[columns[0]].values
+    second = df[columns[1]].values
+
+    # Count number of items
+    population_size = len(first)
+    # Create a NumPy index for scores on the pareto front (zero indexed)
+    population_ids = np.arange(population_size)
+    # Create a starting list of items on the Pareto front
+    # All items start off as being labelled as on the Parteo front
+    pareto_front = np.ones(population_size, dtype=bool)
+    # Loop through each item. This will then be compared with all other items
+    for i in range(population_size):
+        # Loop through all other items
+        for j in range(population_size):
+            # Check if our 'i' pint is dominated by out 'j' point
+            if (first[j] >= first[i]) and (second[j] < second[i]):
+            #if all(scores[j] >= scores[i]) and any(scores[j] > scores[i]):
+                # j dominates i. Label 'i' point as not on Pareto front
+                pareto_front[i] = 0
+                # Stop further comparisons with 'i' (no more comparisons needed)
+                break
+    
+    return df.iloc[population_ids[pareto_front]]
+    # # Return ids of scenarios on pareto front
+    # return population_ids[pareto_front]
+
+
+for name, group in df.groupby(["nice_name"]):
+    pdf = get_pareto(group, ["mean_accuracy", "mean_params"])
+    pdf = pdf[["nice_name", "mean_accuracy", "mean_params", "scores.mean_fit_time"]]
+    print(pdf)
+    pdf = pdf.sort_values(by=['mean_accuracy'], ascending = False)
+    plt.plot(pdf["mean_params"].values, pdf["mean_accuracy"], linestyle='solid', label=name)
+
+plt.legend(loc="lower right")
+
+#%%
+
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
