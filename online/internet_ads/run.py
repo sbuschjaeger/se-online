@@ -27,10 +27,10 @@ from river.ensemble import AdaptiveRandomForestClassifier
 
 from JaxModel import JaxModel
 
-from experiment_runner.experiment_runner_v2 import run_experiments, Variation, generate_configs
+from experiment_runner.experiment_runner import run_experiments, Variation, generate_configs
 
-from BiasedProxEnsemble import BiasedProxEnsemble
-from SGDEnsemble import SGDEnsemble
+#from BiasedProxEnsemble import BiasedProxEnsemble
+#from SGDEnsemble import SGDEnsemble
 from RiverModel import RiverModel
 from PyBiasedProxEnsemble import PyBiasedProxEnsemble
 

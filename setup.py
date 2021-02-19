@@ -69,7 +69,7 @@ setup(
     author_email='sebastian.buschjaeger@tu-dortmund.de',
     description='Biased Prox Ensemble for Python (PyBPE)',
     long_description='',
-    packages=['PyBPE'],
+#    packages=['PyBPE'],
     # ext_modules=[CMakeExtension('PyBPE')],
     # cmdclass=dict(build_ext=CMakeBuild),
     zip_safe=False
