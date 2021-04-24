@@ -2,11 +2,7 @@
 	path = experiment_runner
 	url = git@github.com:sbuschjaeger/experiment_runner.git
 	branch = master
-[submodule "xtensor-python"]
-	path = xtensor-python
-	url = git@github.com:xtensor-stack/xtensor-python.git
-	branch = master
-[submodule "pybind11"]
-	path = pybind11
-	url = https://github.com/pybind/pybind11
-	branch = master
+[submodule "prime"]
+	path = prime
+	url = git@github.com:sbuschjaeger/prime.git
+	branch = main
