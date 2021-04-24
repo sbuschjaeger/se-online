@@ -110,14 +110,13 @@ class OnlineLearner(ABC):
         self.n_classes_ = len(self.classes_)
         self.n_outputs_ = self.n_classes_
         
+        self.X_ = X
+        self.y_ = y
+
         for epoch in range(self.epochs):
             mini_batches = create_mini_batches(X, y, self.batch_size, self.shuffle, self.sliding_window) 
 
-            losses = []
-            total_loss = 0
-            times = []
-            total_time = 0
-            
+            metrics = {}
             metrics = {}
 
             new_epoch = epoch > 0 
@@ -135,12 +134,13 @@ class OnlineLearner(ABC):
 
                     # Extract statistics
                     for key,val in batch_metrics.items():
-                        if self.sliding_window and not first_batch:
-                            metrics[key] = np.concatenate( (metrics.get(key,[]), [val[-1]]), axis=None )
-                            metrics[key + "_sum"] = metrics.get( key + "_sum",0) + val[-1]
-                        else:
-                            metrics[key] = np.concatenate( (metrics.get(key,[]), val), axis=None )
-                            metrics[key + "_sum"] = metrics.get( key + "_sum",0) + np.sum(val)
+                        if key != "loss":
+                            if self.sliding_window and not first_batch:
+                                metrics[key] = np.concatenate( (metrics.get(key,[]), [val[-1]]), axis=None )
+                                metrics[key + "_sum"] = metrics.get( key + "_sum",0) + val[-1]
+                            else:
+                                metrics[key] = np.concatenate( (metrics.get(key,[]), val), axis=None )
+                                metrics[key + "_sum"] = metrics.get( key + "_sum",0) + np.sum(val)
 
                     if self.sliding_window and not first_batch:
                         loss = self.loss_(output[np.newaxis,-1,:], [target[-1]]).mean(axis=1).sum()
@@ -150,24 +150,21 @@ class OnlineLearner(ABC):
                         loss = self.loss_(output, target).mean(axis=1).sum()
                         example_cnt += data.shape[0]
                         pbar.update(data.shape[0])
-                    
-                    # TODO ADD times and losses to metrics and write it to disk
-                    times.append(batch_time)
-                    total_time += batch_time
 
-                    losses.append(loss)
-                    total_loss += loss
+                    metrics["loss"] = np.concatenate( (metrics.get("loss",[]), loss), axis=None )
+                    metrics["loss_sum"] = metrics.get( "loss_sum",0) + np.sum(loss)
+
+                    metrics["time"] = np.concatenate( (metrics.get("time",[]), batch_time / data.shape[0]), axis=None )
+                    metrics["time_sum"] = metrics.get( "time_sum",0) + np.sum(batch_time / data.shape[0])
 
                     m_str = ""
                     for key,val in metrics.items():
                         if "_sum" in key:
                             m_str += "{} {:2.4f} ".format(key.split("_sum")[0], val / example_cnt)
                     
-                    desc = '[{}/{}] loss {:2.4f} time_item {:2.4f} {}'.format(
+                    desc = '[{}/{}] {}'.format(
                         epoch, 
                         self.epochs-1, 
-                        total_loss / example_cnt, 
-                        total_time / example_cnt,
                         m_str
                     )
                     pbar.set_description(desc)

@@ -1,4 +1,4 @@
-name: 
+name: psgd-ensemble
 channels:
   - conda-forge
 dependencies:
@@ -16,7 +16,6 @@ dependencies:
     - jax
     - jaxlib
     - tqdm
-    - ray
     - git+https://github.com/online-ml/river
     - -e file:prime
     - -e file:experiment_runner
