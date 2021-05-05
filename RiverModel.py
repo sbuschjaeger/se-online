@@ -19,25 +19,25 @@ class RiverModel(OnlineLearner):
         assert loss in ["mse","cross-entropy"], "Currently only {{mse, cross-entropy}} loss is supported"
         assert river_model is not None, "river_model was None. This does not work!"
         
-        if "sliding_window" in args and args["sliding_window"] == False:
-            print("WARNING: sliding_window should be True for RiverModel, but it was set to False. Fixing it for you.")
-            args["sliding_window"] = True
+        # if "sliding_window" in args and args["sliding_window"] == False:
+        #     print("WARNING: sliding_window should be True for RiverModel, but it was set to False. Fixing it for you.")
+        #     args["sliding_window"] = True
         
-        if "sliding_window" in kwargs and kwargs["sliding_window"] == False:
-            print("WARNING: sliding_window should be True for RiverModel, but it was set to False. Fixing it for you.")
-            kwargs["sliding_window"] = True
+        # if "sliding_window" in kwargs and kwargs["sliding_window"] == False:
+        #     print("WARNING: sliding_window should be True for RiverModel, but it was set to False. Fixing it for you.")
+        #     kwargs["sliding_window"] = True
 
-        if "batch_size" in args and args["batch_size"] >= 1:
-            if args["batch_size"] > 1:
-                print("WARNING: batch_size should be 1 for RiverModel for optimal performance, but was {}. Fixing it for you.".format(args["batch_size"]))
-            args.pop("batch_size")
+        # if "batch_size" in args and args["batch_size"] >= 1:
+        #     if args["batch_size"] > 1:
+        #         print("WARNING: batch_size should be 1 for RiverModel for optimal performance, but was {}. Fixing it for you.".format(args["batch_size"]))
+        #     args.pop("batch_size")
 
-        if "batch_size" in kwargs and kwargs["batch_size"] >= 1:
-            if kwargs["batch_size"] > 1:
-                print("WARNING: batch_size should be 1 for RiverModel for optimal performance, but was {}. Fixing it for you.".format(kwargs["batch_size"]))
-            kwargs.pop("batch_size")
+        # if "batch_size" in kwargs and kwargs["batch_size"] >= 1:
+        #     if kwargs["batch_size"] > 1:
+        #         print("WARNING: batch_size should be 1 for RiverModel for optimal performance, but was {}. Fixing it for you.".format(kwargs["batch_size"]))
+        #     kwargs.pop("batch_size")
 
-        super().__init__(batch_size = 1, *args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.model = copy.deepcopy(river_model)
         self.loss = loss
@@ -86,25 +86,14 @@ class RiverModel(OnlineLearner):
             n_nodes = self.model._n_decision_nodes + self.model._n_active_leaves + self.model._n_inactive_leaves
         return n_nodes
 
-    def next(self, data, target, train = False, new_epoch = False):
-        output = []
-        if self.sliding_window and self.batch_size > 1:
-            data = [data[-1]]
-            target = [target[-1]]
-            
-        for x, y in zip(data, target):
-            pred = self.predict_proba_one(x)
-            output.append(pred)
-            
-            # if sliding_window = True checken
-            if train:
-                x_dict = {}
-                for i, xi in enumerate(x):
-                    x_dict["att_" + str(i)] = xi
-                self.model.learn_one(x_dict, y)
+    def next(self, data, target):
+        output = self.predict_proba_one(data)
+        x_dict = {}
+        for i, xi in enumerate(data):
+            x_dict["att_" + str(i)] = xi
+        self.model.learn_one(x_dict, target)
 
         output = np.array(output)
-        accuracy = (output.argmax(axis=1) == target) * 100.0
-        n_trees = [self.num_trees() for _ in range(data.shape[0])]
-        n_param = [self.num_parameters() for _ in range(data.shape[0])]
-        return {"accuracy": accuracy, "num_trees": n_trees, "num_parameters" : n_param}, output
+        accuracy = (output.argmax() == target) * 100.0
+
+        return {"accuracy": accuracy, "num_trees": self.num_trees(), "num_parameters" : self.num_parameters()}, output

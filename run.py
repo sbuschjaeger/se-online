@@ -36,6 +36,7 @@ from river import tree
 from river.ensemble import AdaptiveRandomForestClassifier
 
 from JaxModel import JaxModel
+from WindowedTree import WindowedTree
 
 from experiment_runner.experiment_runner import run_experiments, Variation, generate_configs
 
@@ -89,7 +90,7 @@ def post(cfg, model):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-j", "--n_jobs", help="No of jobs for processing pool",type=int, default=1)
-parser.add_argument("-d", "--dataset", help="Dataset used for experiments",type=str, default=["elec"], nargs='+')
+parser.add_argument("-d", "--dataset", help="Dataset used for experiments",type=str, default=["gas-sensor"], nargs='+')
 parser.add_argument("-c", "--n_configs", help="Number of configs per base learner",type=int, default=50)
 parser.add_argument("-t", "--timeout", help="Maximum number of seconds per run. If the runtime exceeds the provided value, stop execution",type=int, default=7200)
 args = parser.parse_args()
@@ -138,6 +139,8 @@ else:
 models = []
 for dataset in args.dataset:
     print("Loading {}".format(dataset))
+    
+    # nominal_attributes = []
 
     # "eeg", "elec", "nomao"
     if dataset in ["elec"]:
@@ -163,7 +166,7 @@ for dataset in args.dataset:
         df = pd.get_dummies(df)
         Y = df["label"].values.astype(np.int32)
         df = df.drop("label", axis=1)
-
+        is_nominal = (df.nunique() == 2).values
         X = df.values.astype(np.float64)
     elif dataset == "gas-sensor":
         dfs = []
@@ -173,64 +176,156 @@ for dataset in args.dataset:
 
         Y = df[0].values.astype(np.int32) - 1
         df = df.drop([0], axis=1)
+        is_nominal = (df.nunique() == 2).values
+
         X = df.values.astype(np.float64)
     else:
         exit(1)
 
     # TODO This might not be known in a real streaming setting. How important is it?
+    # Currently the c backend assumes normalized data
     scaler = MinMaxScaler()
     X = scaler.fit_transform(X)
 
     from collections import Counter
-    print("Data: ", X.shape, " ", X[0:2,:])
+    print("Data: ", X.shape)
     print("Labels: ", Y.shape, " ", Counter(Y))
     # print("Data: ", X.shape)
     # print("Labels: ", Y.shape, " ", set(Y))
     # print("")
     # continue
+    # is_nominal = np.unique(X, axis=0, return_counts=True)[1] <= 2
+    # print(np.unique(X, axis=0, return_counts=True))
+    nominal_attributes = ["att_" + str(j) for j, nom in enumerate(is_nominal) if nom ]
+    if len(nominal_attributes) == 0:
+        nominal_attributes = None
+        is_nominal = None
 
     experiment_cfg = {
         "X":X,
         "Y":Y,
         "verbose":True,
-        "eval_loss":"cross-entropy",
+        "dataset":dataset,
         "seed":0
     }
 
     online_learner_cfg = {
-        "epochs":1,
+        "seed":0,
+        "eval_loss":"mse",
         "out_path":".",
-        "sliding_window":True,
         "verbose":args.n_jobs == 1,
         "shuffle":False,
-        "eval_every_epochs":1   
     }
 
     np.random.seed(experiment_cfg["seed"])
-
-    models = []
     print("Generating random hyperparameter configurations")
 
+    # models.extend(
+    #     generate_configs(
+    #         {
+    #             "model":RiverModel,
+    #             "model_params": {
+    #                 "river_model": "SRP",
+    #                 "river_params": {
+    #                     "model":"HoeffdingTreeClassifier",
+    #                     "n_models":32,
+    #                     "model_params": {
+    #                         "grace_period" : 50,
+    #                         "split_confidence" : 0.1,
+    #                         "leaf_prediction" : "nba",
+    #                         "nominal_attributes":nominal_attributes
+    #                     }
+    #                 },
+    #                 **online_learner_cfg
+    #             },
+    #             **experiment_cfg
+    #         },
+    #         n_configs=args.n_configs
+    #     )
+    # )
+
+    # models.extend(
+    #     generate_configs(
+    #         {
+    #             "model":PrimeModel,
+    #             "model_params": {
+    #                 "max_depth":8,
+    #                 "loss":"cross-entropy",
+    #                 "ensemble_regularizer":"hard-L1",
+    #                 "l_ensemble_reg":32,
+    #                 "tree_regularizer":None,
+    #                 "l_tree_reg":0,
+    #                 "normalize_weights":True,
+    #                 "init_weight":"average",
+    #                 "update_leaves":True,
+    #                 "seed":experiment_cfg["seed"],
+    #                 "batch_size":8,
+    #                 "step_size":1e-1,
+    #                 "additional_tree_options" : {
+    #                     "splitter" : "best",
+    #                     "criterion" : "gini"
+    #                 },
+    #                 "backend" : "python",
+    #                 **online_learner_cfg
+    #             },
+    #             **experiment_cfg
+    #         }, 
+    #         n_configs=args.n_configs
+    #     )
+    # )
+
+    # models.extend(
+    #     generate_configs(
+    #         {
+    #             "model":PrimeModel,
+    #             "model_params": {
+    #                 "max_depth":8,
+    #                 "loss":"cross-entropy",
+    #                 "ensemble_regularizer":"hard-L1",
+    #                 "l_ensemble_reg":32,
+    #                 "tree_regularizer":None,
+    #                 "l_tree_reg":0,
+    #                 "normalize_weights":True,
+    #                 "init_weight":"average",
+    #                 "update_leaves":True,
+    #                 "seed":experiment_cfg["seed"],
+    #                 "batch_size":8,
+    #                 "step_size":1e-1,
+    #                 "additional_tree_options" : {
+    #                     "tree_init_mode" : "train",
+    #                     "is_nominal":is_nominal
+    #                 },
+    #                 "backend" : "c++",
+    #                 **online_learner_cfg
+    #             },
+    #             **experiment_cfg
+    #         }, 
+    #         n_configs=args.n_configs
+    #     )
+    # )
+
     models.extend(
         generate_configs(
             {
                 "model":PrimeModel,
                 "model_params": {
-                    "max_depth":Variation([2,3,4,5,6,7,8,9,10]),
-                    "loss":Variation(["cross-entropy","mse"]),
-                    "ensemble_regularizer":"hard-L1",
-                    "l_ensemble_reg":Variation([16,32,64,128,256,512]),
+                    "max_depth":Variation([4]),
+                    "loss":Variation(["mse"]),
+                    "ensemble_regularizer":"hard-L0",
+                    "l_ensemble_reg":Variation([64]),
                     "tree_regularizer":None,
                     "l_tree_reg":0,
                     "normalize_weights":True,
-                    "init_weight":"average",
-                    "update_leaves":Variation([True, False]),
+                    "init_weight":"average", #,
+                    "update_leaves":Variation([True]),
                     "seed":experiment_cfg["seed"],
-                    "batch_size":Variation([4,8,16,32,64,128,256]),
-                    "step_size":Variation([10,12,15,20]), #1e-1,5e-1,1,2,3,5,7,
+                    "batch_size":Variation([4]),
+                    "step_size":Variation([5e-1]), #1e-1,5e-1,1,2,3,5,7,
                     "additional_tree_options" : {
-                        "splitter" : "best", "criterion" : "gini"
+                        "splitter" : Variation(["best"]),
+                        "criterion" : "gini" # entropy
                     },
+                    "backend" : "python",
                     **online_learner_cfg
                 },
                 **experiment_cfg
@@ -238,44 +333,397 @@ for dataset in args.dataset:
             n_configs=args.n_configs
         )
     )
+
+    # 96.39 % Accuarcy
+    # Maybe average is the problem?
+    # models.extend(
+    #     generate_configs(
+    #         {
+    #             "model":PrimeModel,
+    #             "model_params": {
+    #                 "max_depth":Variation([2, 3, 4, 5, 6, 7]),
+    #                 "loss":Variation(["mse"]),
+    #                 "ensemble_regularizer":"hard-L1",
+    #                 "l_ensemble_reg":Variation([16,32,64,128]),
+    #                 "tree_regularizer":None,
+    #                 "l_tree_reg":0,
+    #                 "normalize_weights":True,
+    #                 "init_weight":"average",
+    #                 "update_leaves":Variation([True]), #True, 
+    #                 "seed":experiment_cfg["seed"],
+    #                 "batch_size":Variation([4, 8, 16, 32, 64, 128]),
+    #                 "step_size":Variation([1, 5e-1, 2e-1, 1e-1, 1e-2]), #1e-1,5e-1,1,2,3,5,7,
+    #                 "additional_tree_options" : {
+    #                     "tree_init_mode" : Variation(["train"]),
+    #                     "is_nominal":is_nominal
+    #                 },
+    #                 "backend" : "c++",
+    #                 **online_learner_cfg
+    #             },
+    #             **experiment_cfg
+    #         }, 
+    #         n_configs=args.n_configs
+    #     )
+    # )
+
+    # models.extend(
+    #     generate_configs(
+    #         {
+    #             "model":WindowedTree,
+    #             "model_params": {
+    #                 "max_depth":Variation([2, 3, 4, 5, 6, 7]),
+    #                 "seed":experiment_cfg["seed"],
+    #                 "batch_size":Variation([4, 8, 16, 32, 64, 128]),
+    #                 "splitter" : Variation(["best", "random"]),
+    #                 "criterion" : "gini", 
+    #                 **online_learner_cfg
+    #             },
+    #             **experiment_cfg
+    #         }, 
+    #         n_configs=args.n_configs
+    #     )
+    # )
+
+    # models.extend(
+    #     generate_configs(
+    #         {
+    #             "model":PrimeModel,
+    #             "model_params": {
+    #                 "max_depth":Variation([2, 3, 4, 5]),
+    #                 "loss":Variation(["mse"]),
+    #                 "ensemble_regularizer":"hard-L1",
+    #                 "l_ensemble_reg":Variation([16,32,64,128]),
+    #                 "tree_regularizer":None,
+    #                 "l_tree_reg":0,
+    #                 "normalize_weights":True,
+    #                 "init_weight":"average",
+    #                 "update_leaves":Variation([True]), #True, 
+    #                 "seed":experiment_cfg["seed"],
+    #                 "batch_size":Variation([4, 8, 16, 32, 64, 128]),
+    #                 "step_size":Variation([1, 5e-1, 2e-1, 1e-1, 1e-2]), #1e-1,5e-1,1,2,3,5,7,
+    #                 "additional_tree_options" : {
+    #                     "splitter" : Variation(["best"]),
+    #                     "criterion" : "gini"
+    #                 },
+    #                 "backend" : "python",
+    #                 **online_learner_cfg
+    #             },
+    #             **experiment_cfg
+    #         }, 
+    #         n_configs=args.n_configs
+    #     )
+    # )
+
+    # models.extend(
+    #     generate_configs(
+    #         {
+    #             "model":PrimeModel,
+    #             "model_params": {
+    #                 "max_depth":Variation([3]),
+    #                 "loss":Variation(["mse"]),
+    #                 "ensemble_regularizer":"hard-L1",
+    #                 "l_ensemble_reg":Variation([16]),
+    #                 "tree_regularizer":None,
+    #                 "l_tree_reg":0,
+    #                 "normalize_weights":True,
+    #                 "init_weight":"average",
+    #                 "update_leaves":Variation([True]),
+    #                 "seed":experiment_cfg["seed"],
+    #                 "batch_size":Variation([32]),
+    #                 "step_size":Variation([1e-1]), #1e-1,5e-1,1,2,3,5,7,
+    #                 "additional_tree_options" : {
+    #                     "splitter" : "best",
+    #                     "criterion" : "gini"
+    #                 },
+    #                 "backend" : "python",
+    #                 **online_learner_cfg
+    #             },
+    #             **experiment_cfg
+    #         }, 
+    #         n_configs=args.n_configs
+    #     )
+    # )
+
+    # models.extend(
+    #     generate_configs(
+    #         {
+    #             "model":PrimeModel,
+    #             "model_params": {
+    #                 "max_depth":Variation([5]),
+    #                 "loss":Variation(["mse"]),
+    #                 "ensemble_regularizer":"hard-L1",
+    #                 "l_ensemble_reg":Variation([4]),
+    #                 "tree_regularizer":None,
+    #                 "l_tree_reg":0,
+    #                 "normalize_weights":False,
+    #                 #"init_weight":"average",
+    #                 "init_weight":0.1,
+    #                 "update_leaves":Variation([True]),
+    #                 "seed":experiment_cfg["seed"],
+    #                 "batch_size":Variation([32]),
+    #                 "step_size":Variation([1e-1]),
+    #                 "additional_tree_options" : {
+    #                     "splitter" : Variation(["best"]), 
+    #                     "criterion" : "gini"
+    #                 },
+    #                 "backend" : "python",
+    #                 **online_learner_cfg
+    #             },
+    #             **experiment_cfg
+    #         }, 
+    #         n_configs=args.n_configs
+    #     )
+    # )
+
+   
+    # models.extend(
+    #     generate_configs(
+    #         {
+    #             "model":PrimeModel,
+    #             "model_params": {
+    #                 "max_depth":Variation([2,3,4,5,6,7,8,9,10]),
+    #                 "loss":Variation(["cross-entropy","mse"]),
+    #                 "ensemble_regularizer":"hard-L1",
+    #                 "l_ensemble_reg":Variation([16,32,64,128,256,512,1024]),
+    #                 "tree_regularizer":None,
+    #                 "l_tree_reg":0,
+    #                 "normalize_weights":True,
+    #                 "init_weight":"average",
+    #                 "update_leaves":Variation([True, False]),
+    #                 "seed":experiment_cfg["seed"],
+    #                 "batch_size":Variation([8,32,128,512,1024]),
+    #                 "step_size":Variation([1e-1,1e-2,1e-3]), #1e-1,5e-1,1,2,3,5,7,
+    #                 "additional_tree_options" : {
+    #                     "tree_init_mode" : Variation(["train", "fully-random", "random"]),
+    #                     "tree_init_mode" : Variation(["train", "fully-random", "random"]),
+    #                     "is_nominal":is_nominal
+    #                 },
+    #                 "backend" : "c++",
+    #                 **online_learner_cfg
+    #             },
+    #             **experiment_cfg
+    #         }, 
+    #         n_configs=args.n_configs
+    #     )
+    # )
     
+    '''
     models.extend(
         generate_configs(
             {
-                "model":PrimeModel,
+                "model":RiverModel,
                 "model_params": {
-                    "max_depth":Variation([2,3,4,5,6,7,8,9,10]),
-                    "loss":Variation(["cross-entropy","mse"]),
-                    "ensemble_regularizer":"hard-L1",
-                    "l_ensemble_reg":Variation([16,32,64,128,256,512]),
-                    "tree_regularizer":None,
-                    "l_tree_reg":0,
-                    "normalize_weights":True,
-                    "init_weight":"average",
-                    "update_leaves":Variation([True, False]),
-                    "seed":experiment_cfg["seed"],
-                    "batch_size":Variation([4,8,16,32,64,128,256]),
-                    "step_size":Variation([10,12,15,20]), #1e-1,5e-1,1,2,3,5,7,
-                    "additional_tree_options" : {
-                        "splitter" : "random", "criterion" : "gini"
+                    "river_model": "HoeffdingTreeClassifier",
+                    "river_params": {
+                        "grace_period" : Variation([10,50,100,200,500]),
+                        "split_confidence" : Variation([0.1, 0.01, 0.001]),
+                        "leaf_prediction" : Variation(["mc", "nba"]),
+                        "nominal_attributes":nominal_attributes
                     },
                     **online_learner_cfg
                 },
                 **experiment_cfg
-            }, 
+            },
             n_configs=args.n_configs
         )
     )
+
+    models.extend(
+        generate_configs(
+            {
+                "model":RiverModel,
+                "model_params": {
+                    "river_model": "ExtremelyFastDecisionTreeClassifier",
+                    "river_params": {
+                        "grace_period" : Variation([10,50,100,200,500]),
+                        "split_confidence" : Variation([0.1, 0.01, 0.001]),
+                        "leaf_prediction" : Variation(["mc", "nba"]),
+                        "nominal_attributes":nominal_attributes
+                    },
+                    **online_learner_cfg
+                },
+                **experiment_cfg
+            },
+            n_configs=args.n_configs
+        )
+    )
+
+    models.extend(
+        generate_configs(
+            {
+                "model":RiverModel,
+                "model_params": {
+                    "river_model": "SRP",
+                    "river_params": {
+                        "model":"HoeffdingTreeClassifier",
+                        "n_models":Variation([2,4,8,16,32]),
+                        "model_params": {
+                            "grace_period" : Variation([10,50,100,200,500]),
+                            "split_confidence" : Variation([0.1, 0.01, 0.001]),
+                            "leaf_prediction" : Variation(["mc", "nba"]),
+                            "nominal_attributes":nominal_attributes
+                        }
+                    },
+                    **online_learner_cfg
+                },
+                **experiment_cfg
+            },
+            n_configs=args.n_configs
+        )
+    )
+
+    models.extend(
+        generate_configs(
+            {
+                "model":RiverModel,
+                "model_params": {
+                    "river_model": "SRP",
+                    "river_params": {
+                        "model":"ExtremelyFastDecisionTreeClassifier",
+                        "n_models":Variation([2,4,8,16,32]),
+                        "model_params": {
+                            "grace_period" : Variation([10,50,100,200,500]),
+                            "split_confidence" : Variation([0.1, 0.01, 0.001]),
+                            "leaf_prediction" : Variation(["mc", "nba"]),
+                            "nominal_attributes":nominal_attributes
+                        }
+                    },
+                    **online_learner_cfg
+                },
+                **experiment_cfg
+            },
+            n_configs=args.n_configs
+        )
+    )
+
+    models.extend(
+        generate_configs(
+            {
+                "model":RiverModel,
+                "model_params": {
+                    "river_model": "AdaBoostClassifier",
+                    "river_params": {
+                        "model":"HoeffdingTreeClassifier",
+                        "n_models":Variation([2,4,8,16,32]),
+                        "model_params": {
+                            "grace_period" : Variation([10,50,100,200,500]),
+                            "split_confidence" : Variation([0.1, 0.01, 0.001]),
+                            "leaf_prediction" : Variation(["mc", "nba"]),
+                            "nominal_attributes":nominal_attributes
+                        }
+                    },
+                    **online_learner_cfg
+                },
+                **experiment_cfg
+            },
+            n_configs=args.n_configs
+        )
+    )
+
+    models.extend(
+        generate_configs(
+            {
+                "model":RiverModel,
+                "model_params": {
+                    "river_model": "AdaBoostClassifier",
+                    "river_params": {
+                        "model":"ExtremelyFastDecisionTreeClassifier",
+                        "n_models":Variation([2,4,8,16,32]),
+                        "model_params": {
+                            "grace_period" : Variation([10,50,100,200,500]),
+                            "split_confidence" : Variation([0.1, 0.01, 0.001]),
+                            "leaf_prediction" : Variation(["mc", "nba"]),
+                            "nominal_attributes":nominal_attributes
+                        }
+                    },
+                    **online_learner_cfg
+                },
+                **experiment_cfg
+            },
+            n_configs=args.n_configs
+        )
+    )
+
+    models.extend(
+        generate_configs(
+            {
+                "model":RiverModel,
+                "model_params": {
+                    "river_model": "BaggingClassifier",
+                    "river_params": {
+                        "model":"HoeffdingTreeClassifier",
+                        "n_models":Variation([2,4,8,16,32]),
+                        "model_params": {
+                            "grace_period" : Variation([10,50,100,200,500]),
+                            "split_confidence" : Variation([0.1, 0.01, 0.001]),
+                            "leaf_prediction" : Variation(["mc", "nba"]),
+                            "nominal_attributes":nominal_attributes
+                        }
+                    },
+                    **online_learner_cfg
+                },
+                **experiment_cfg
+            },
+            n_configs=args.n_configs
+        )
+    )
+
+    models.extend(
+        generate_configs(
+            {
+                "model":RiverModel,
+                "model_params": {
+                    "river_model": "BaggingClassifier",
+                    "river_params": {
+                        "model":"ExtremelyFastDecisionTreeClassifier",
+                        "n_models":Variation([2,4,8,16,32]),
+                        "model_params": {
+                            "grace_period" : Variation([10,50,100,200,500]),
+                            "split_confidence" : Variation([0.1, 0.01, 0.001]),
+                            "leaf_prediction" : Variation(["mc", "nba"]),
+                            "nominal_attributes":nominal_attributes
+                        }
+                    },
+                    **online_learner_cfg
+                },
+                **experiment_cfg
+            },
+            n_configs=args.n_configs
+        )
+    )
+
+    models.extend(
+        generate_configs(
+            {
+                "model":RiverModel,
+                "model_params": {
+                    "river_model": "AdaptiveRandomForestClassifier",
+                    "river_params": {
+                        "grace_period" : Variation([10,50,100,200,500]),
+                        "split_confidence" : Variation([0.1, 0.01, 0.001]),
+                        "leaf_prediction" : Variation(["mc", "nba"]),
+                        "n_models":Variation([2,4,8,16,32]),
+                        "max_features":Variation([0.25,0.5,0.75]),
+                        "nominal_attributes":nominal_attributes
+                    },
+                    **online_learner_cfg
+                },
+                **experiment_cfg
+            },
+            n_configs=args.n_configs
+        )
+    )
+    '''
 
     # models.extend(
     #     generate_configs(
     #         {
     #             "model":JaxModel,
     #             "model_params": {
-    #                 "loss":"cross-entropy",
+    #                 "loss":Variation(["cross-entropy","mse"]),
     #                 "step_size":Variation([1e-3,1e-2,1e-1,5e-1,1,2]),
     #                 "max_depth":Variation([2,3,4,5]),
-    #                 "n_trees":Variation([1,2,4,8]),
+    #                 "n_trees":Variation([1,2,4]),
     #                 "batch_size":Variation([8,16,32,64,128,256]),
     #                 **online_learner_cfg
     #             },
@@ -285,203 +733,8 @@ for dataset in args.dataset:
     #     )
     # )
 
-    # models.extend(
-    #     generate_configs(
-    #         {
-    #             "model":RiverModel,
-    #             "model_params": {
-    #                 "river_model": "HoeffdingTreeClassifier",
-    #                 "river_params": {
-    #                     "grace_period" : Variation([10,50,100,200,500]),
-    #                     "split_confidence" : Variation([0.1, 0.01, 0.001]),
-    #                     "leaf_prediction" : Variation(["mc", "nba"])
-    #                 },
-    #                 **online_learner_cfg
-    #             },
-    #             **experiment_cfg
-    #         },
-    #         n_configs=args.n_configs
-    #     )
-    # )
-
-    # models.extend(
-    #     generate_configs(
-    #         {
-    #             "model":RiverModel,
-    #             "model_params": {
-    #                 "river_model": "ExtremelyFastDecisionTreeClassifier",
-    #                 "river_params": {
-    #                     "grace_period" : Variation([10,50,100,200,500]),
-    #                     "split_confidence" : Variation([0.1, 0.01, 0.001]),
-    #                     "leaf_prediction" : Variation(["mc", "nba"])
-    #                 },
-    #                 **online_learner_cfg
-    #             },
-    #             **experiment_cfg
-    #         },
-    #         n_configs=args.n_configs
-    #     )
-    # )
-
-    # models.extend(
-    #     generate_configs(
-    #         {
-    #             "model":RiverModel,
-    #             "model_params": {
-    #                 "river_model": "SRP",
-    #                 "river_params": {
-    #                     "model":"HoeffdingTreeClassifier",
-    #                     "n_models":Variation([2,4,8,16,32]),
-    #                     "model_params": {
-    #                         "grace_period" : Variation([10,50,100,200,500]),
-    #                         "split_confidence" : Variation([0.1, 0.01, 0.001]),
-    #                         "leaf_prediction" : Variation(["mc", "nba"])
-    #                     }
-    #                 },
-    #                 **online_learner_cfg
-    #             },
-    #             **experiment_cfg
-    #         },
-    #         n_configs=args.n_configs
-    #     )
-    # )
-
-    # models.extend(
-    #     generate_configs(
-    #         {
-    #             "model":RiverModel,
-    #             "model_params": {
-    #                 "river_model": "SRP",
-    #                 "river_params": {
-    #                     "model":"ExtremelyFastDecisionTreeClassifier",
-    #                     "n_models":Variation([2,4,8,16,32]),
-    #                     "model_params": {
-    #                         "grace_period" : Variation([10,50,100,200,500]),
-    #                         "split_confidence" : Variation([0.1, 0.01, 0.001]),
-    #                         "leaf_prediction" : Variation(["mc", "nba"])
-    #                     }
-    #                 },
-    #                 **online_learner_cfg
-    #             },
-    #             **experiment_cfg
-    #         },
-    #         n_configs=args.n_configs
-    #     )
-    # )
-
-    # models.extend(
-    #     generate_configs(
-    #         {
-    #             "model":RiverModel,
-    #             "model_params": {
-    #                 "river_model": "AdaBoostClassifier",
-    #                 "river_params": {
-    #                     "model":"HoeffdingTreeClassifier",
-    #                     "n_models":Variation([2,4,8,16,32]),
-    #                     "model_params": {
-    #                         "grace_period" : Variation([10,50,100,200,500]),
-    #                         "split_confidence" : Variation([0.1, 0.01, 0.001]),
-    #                         "leaf_prediction" : Variation(["mc", "nba"])
-    #                     }
-    #                 },
-    #                 **online_learner_cfg
-    #             },
-    #             **experiment_cfg
-    #         },
-    #         n_configs=args.n_configs
-    #     )
-    # )
-
-    # models.extend(
-    #     generate_configs(
-    #         {
-    #             "model":RiverModel,
-    #             "model_params": {
-    #                 "river_model": "AdaBoostClassifier",
-    #                 "river_params": {
-    #                     "model":"ExtremelyFastDecisionTreeClassifier",
-    #                     "n_models":Variation([2,4,8,16,32]),
-    #                     "model_params": {
-    #                         "grace_period" : Variation([10,50,100,200,500]),
-    #                         "split_confidence" : Variation([0.1, 0.01, 0.001]),
-    #                         "leaf_prediction" : Variation(["mc", "nba"])
-    #                     }
-    #                 },
-    #                 **online_learner_cfg
-    #             },
-    #             **experiment_cfg
-    #         },
-    #         n_configs=args.n_configs
-    #     )
-    # )
-
-    # models.extend(
-    #     generate_configs(
-    #         {
-    #             "model":RiverModel,
-    #             "model_params": {
-    #                 "river_model": "BaggingClassifier",
-    #                 "river_params": {
-    #                     "model":"HoeffdingTreeClassifier",
-    #                     "n_models":Variation([2,4,8,16,32]),
-    #                     "model_params": {
-    #                         "grace_period" : Variation([10,50,100,200,500]),
-    #                         "split_confidence" : Variation([0.1, 0.01, 0.001]),
-    #                         "leaf_prediction" : Variation(["mc", "nba"])
-    #                     }
-    #                 },
-    #                 **online_learner_cfg
-    #             },
-    #             **experiment_cfg
-    #         },
-    #         n_configs=args.n_configs
-    #     )
-    # )
-
-    # models.extend(
-    #     generate_configs(
-    #         {
-    #             "model":RiverModel,
-    #             "model_params": {
-    #                 "river_model": "BaggingClassifier",
-    #                 "river_params": {
-    #                     "model":"ExtremelyFastDecisionTreeClassifier",
-    #                     "n_models":Variation([2,4,8,16,32]),
-    #                     "model_params": {
-    #                         "grace_period" : Variation([10,50,100,200,500]),
-    #                         "split_confidence" : Variation([0.1, 0.01, 0.001]),
-    #                         "leaf_prediction" : Variation(["mc", "nba"])
-    #                     }
-    #                 },
-    #                 **online_learner_cfg
-    #             },
-    #             **experiment_cfg
-    #         },
-    #         n_configs=args.n_configs
-    #     )
-    # )
-
-    # models.extend(
-    #     generate_configs(
-    #         {
-    #             "model":RiverModel,
-    #             "model_params": {
-    #                 "river_model": "AdaptiveRandomForestClassifier",
-    #                 "river_params": {
-    #                     "grace_period" : Variation([10,50,100,200,500]),
-    #                     "split_confidence" : Variation([0.1, 0.01, 0.001]),
-    #                     "leaf_prediction" : Variation(["mc", "nba"]),
-    #                     "n_models":Variation([2,4,8,16,32]),
-    #                     "max_features":Variation([0.25,0.5,0.75])
-    #                 },
-    #                 **online_learner_cfg
-    #             },
-    #             **experiment_cfg
-    #         },
-    #         n_configs=args.n_configs
-    #     )
-    # )
 
 random.shuffle(models)
+
 
 run_experiments(basecfg, models)

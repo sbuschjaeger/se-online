@@ -14,6 +14,7 @@ from scipy.special import softmax
 from OnlineLearner import OnlineLearner
 
 from prime.Prime import Prime
+from prime.CPrimeBindings import CPrimeBindings
 
 class PrimeModel(OnlineLearner):
     """ 
@@ -71,51 +72,150 @@ class PrimeModel(OnlineLearner):
                 verbose = False,
                 out_path = None,
                 seed = None,
-                epochs = None,
                 additional_tree_options = {
                     "splitter" : "best", "criterion" : "gini"
                 },
-                eval_every_epochs = None,
                 eval_loss = "cross-entropy",
-                sliding_window = False,
-                shuffle = False
+                shuffle = False,
+                backend = "python"
         ):
 
-        super().__init__(eval_loss, batch_size, sliding_window, epochs, seed, verbose, shuffle, out_path, eval_every_epochs)
+        super().__init__(eval_loss, seed, verbose, shuffle, out_path)
 
-        self.model = Prime(
-            max_depth,
-            loss,
-            step_size,
-            ensemble_regularizer,
-            l_ensemble_reg,
-            tree_regularizer,
-            l_tree_reg,
-            normalize_weights,
-            init_weight,
-            update_leaves,
-            batch_size,
-            verbose,
-            out_path,
-            seed,
-            epochs,
-            additional_tree_options
-        )
+        if "tree_init_mode" in additional_tree_options:
+            assert additional_tree_options["tree_init_mode"] in ["train", "fully-random", "random"], "Currently only {{train, fully-random, random}} as tree_init_mode is supported"
+            self.tree_init_mode = additional_tree_options["tree_init_mode"]
+        else:
+            self.tree_init_mode = "train^"
+
+        if "is_nominal" in additional_tree_options:
+            self.is_nominal = additional_tree_options["is_nominal"]
+        else:
+            self.is_nominal = None
+
+        if seed is None:
+            self.seed = 1234
+        else:
+            self.seed = seed
+
+        np.random.seed(self.seed)
+        random.seed(self.seed)
+        
+        self.backend = backend
+        self.max_depth = max_depth
+        self.loss = loss
+        self.step_size = step_size
+        self.ensemble_regularizer = ensemble_regularizer
+        self.l_ensemble_reg = l_ensemble_reg
+        self.tree_regularizer = tree_regularizer
+        self.l_tree_reg = l_tree_reg
+        self.normalize_weights = normalize_weights
+        self.init_weight = init_weight
+        self.update_leaves = update_leaves
+        self.batch_size = batch_size
+        self.verbose = verbose
+        self.out_path = out_path
+        self.seed = seed
+        self.additional_tree_options = additional_tree_options
+        self.model = None 
+
+        self.cur_batch_x = [] 
+        self.cur_batch_y = [] 
 
     def num_trees(self):
         return self.model.num_trees()
 
     def num_parameters(self):
-        return self.model.num_parameters()
+        if self.backend == "c++":
+            return (2**(self.max_depth + 1) - 1)*self.num_trees()
+        else:
+            return self.model.num_parameters()
 
-    def next(self, data, target, train = False, new_epoch = False):
-        return self.model.next(data, target)
+    def next(self, data, target):
+        # The python and the c++ backend are both batched algorithms
+        # and we want to also consume data in a sliding window approach.
+        if len(self.cur_batch_x) > self.batch_size:
+            self.cur_batch_x.pop(0)
+            self.cur_batch_y.pop(0)
+
+        self.cur_batch_x.append(data)
+        self.cur_batch_y.append(target)
+        
+        batch_data = np.array(self.cur_batch_x)
+        batch_target = np.array(self.cur_batch_y)
+
+        # This is a little in-efficient since self.model.next already gives the output
+        # and some statistics (depending on the backend). However, these statistics / output are for the entire batch and not the given example (data, target)
+        # The c++ bindings only supports batched data and thus we add the implicit batch dimension via data[np.newaxis,:]
+        output = np.array(self.model.predict_proba(data[np.newaxis,:]))[0]
+        self.model.next(batch_data, batch_target)
+        accuracy = (output.argmax() == target) * 100.0
+
+        return {"accuracy": accuracy, "num_trees": self.num_trees(), "num_parameters" : self.num_parameters()}, output
 
     def fit(self, X, y, sample_weight = None):
-        self.model.classes_ = unique_labels(y)
-        self.model.n_classes_ = len(self.model.classes_)
-        self.model.n_outputs_ = self.model.n_classes_
-        
-        self.model.X_ = X
-        self.model.y_ = y
+        if self.backend == "c++":
+            if self.init_weight in ["average", "max"]:
+                weight_init_mode = self.init_weight
+                init_weight = 1.0
+            else:
+                weight_init_mode = "constant"
+                init_weight = self.init_weight
+            
+            if self.update_leaves:
+                tree_update_mode = "gradient"
+            else:
+                tree_update_mode = "none"
+            
+            if self.is_nominal is None:
+                is_nominal = [False for _ in range(X.shape[1])]
+            else:
+                is_nominal = self.is_nominal
+
+            ensemble_regularizer = "none" if self.ensemble_regularizer is None else str(self.ensemble_regularizer)
+            tree_regularizer = "none" if self.tree_regularizer is None else str(self.tree_regularizer)
+
+            self.model = CPrimeBindings(
+                len(unique_labels(y)), 
+                self.max_depth,
+                self.seed,
+                self.normalize_weights,
+                self.loss,
+                self.step_size,
+                weight_init_mode,
+                float(init_weight),
+                is_nominal,
+                ensemble_regularizer,
+                float(self.l_ensemble_reg),
+                tree_regularizer,
+                float(self.l_tree_reg),
+                self.tree_init_mode, 
+                tree_update_mode
+            )
+        else:
+            self.model = Prime(
+                self.max_depth,
+                self.loss,
+                self.step_size,
+                self.ensemble_regularizer,
+                self.l_ensemble_reg,
+                self.tree_regularizer,
+                self.l_tree_reg,
+                self.normalize_weights,
+                self.init_weight,
+                self.update_leaves,
+                self.batch_size,
+                self.verbose,
+                self.out_path,
+                self.seed,
+                1,
+                self.additional_tree_options
+            )
+
+            self.model.classes_ = sorted(unique_labels(y)) # TODO rework this for CPrime
+            self.model.n_classes_ = len(self.model.classes_)
+            self.model.n_outputs_ = self.model.n_classes_
+            
+            self.model.X_ = X
+            self.model.y_ = y
         super().fit(X,y, sample_weight)
