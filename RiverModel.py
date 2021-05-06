@@ -14,9 +14,8 @@ from scipy.special import softmax
 from OnlineLearner import OnlineLearner
 
 class RiverModel(OnlineLearner):
-    def __init__(self, river_model, loss = "cross-entropy", *args, **kwargs):
+    def __init__(self, river_model, *args, **kwargs):
 
-        assert loss in ["mse","cross-entropy"], "Currently only {{mse, cross-entropy}} loss is supported"
         assert river_model is not None, "river_model was None. This does not work!"
         
         # if "sliding_window" in args and args["sliding_window"] == False:
@@ -40,7 +39,6 @@ class RiverModel(OnlineLearner):
         super().__init__(*args, **kwargs)
 
         self.model = copy.deepcopy(river_model)
-        self.loss = loss
     
     def predict_proba_one(self, x):
         data = {}
@@ -49,8 +47,11 @@ class RiverModel(OnlineLearner):
 
         output = self.model.predict_proba_one(data)
         pred = np.zeros(self.n_classes_)
-        for key, val in output.items():
-            pred[key] = val
+        if len(output) == 0:
+            return 1.0 / self.n_classes_ * np.ones(self.n_classes_)
+        else:
+            for key, val in output.items():
+                pred[key] = val
         
         return pred
 

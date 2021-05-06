@@ -44,6 +44,7 @@ from experiment_runner.experiment_runner import run_experiments, Variation, gene
 # from SGDEnsemble import SGDEnsemble
 from RiverModel import RiverModel
 from PrimeModel import PrimeModel
+from MoaModel import MoaModel
 
 def pre(cfg):
     model_ctor = cfg.pop("model")
@@ -90,8 +91,8 @@ def post(cfg, model):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-j", "--n_jobs", help="No of jobs for processing pool",type=int, default=1)
-parser.add_argument("-d", "--dataset", help="Dataset used for experiments",type=str, default=["gas-sensor"], nargs='+')
-parser.add_argument("-c", "--n_configs", help="Number of configs per base learner",type=int, default=50)
+parser.add_argument("-d", "--dataset", help="Dataset used for experiments",type=str, default=["elec"], nargs='+')
+parser.add_argument("-c", "--n_configs", help="Number of configs per base learner",type=int, default=1)
 parser.add_argument("-t", "--timeout", help="Maximum number of seconds per run. If the runtime exceeds the provided value, stop execution",type=int, default=7200)
 args = parser.parse_args()
 
@@ -197,9 +198,9 @@ for dataset in args.dataset:
     # is_nominal = np.unique(X, axis=0, return_counts=True)[1] <= 2
     # print(np.unique(X, axis=0, return_counts=True))
     nominal_attributes = ["att_" + str(j) for j, nom in enumerate(is_nominal) if nom ]
-    if len(nominal_attributes) == 0:
-        nominal_attributes = None
-        is_nominal = None
+    # if len(nominal_attributes) == 0:
+    #     nominal_attributes = []
+    #     is_nominal = []
 
     experiment_cfg = {
         "X":X,
@@ -219,6 +220,167 @@ for dataset in args.dataset:
 
     np.random.seed(experiment_cfg["seed"])
     print("Generating random hyperparameter configurations")
+
+    # models.extend(
+    #     generate_configs(
+    #         {
+    #             "model":PrimeModel,
+    #             "model_params": {
+    #                 "max_depth":Variation([2, 3, 4, 5, 6, 7]),
+    #                 "loss":Variation(["mse", "cross-entropy"]),
+    #                 "ensemble_regularizer":"hard-L0",
+    #                 "l_ensemble_reg":Variation([4, 8, 16, 32, 64, 128]),
+    #                 "tree_regularizer":None,
+    #                 "l_tree_reg":0,
+    #                 "normalize_weights":True,
+    #                 "init_weight":"average", #,
+    #                 "update_leaves":Variation([True, False]),
+    #                 "seed":experiment_cfg["seed"],
+    #                 "batch_size":Variation([4, 8, 16, 32, 64, 128]),
+    #                 "step_size":Variation([1e-2,1e-1,2e-1,5e-1,1]), 
+    #                 "additional_tree_options" : {
+    #                     "splitter" : Variation(["best"]),
+    #                     "criterion" : Variation(["gini","entropy"])
+    #                 },
+    #                 "backend" : "python",
+    #                 **online_learner_cfg
+    #             },
+    #             **experiment_cfg
+    #         }, 
+    #         n_configs=args.n_configs
+    #     )
+    # )
+
+    # models.extend(
+    #     generate_configs(
+    #         {
+    #             "model":MoaModel,
+    #             "model_params": {
+    #                 "moa_model":"moa.classifiers.meta.OzaBag",
+    #                 "moa_params": {
+    #                     "s" : Variation(["5"]),
+    #                     "l": {
+    #                         MoaModel.MOA_EMPTY_PLACEHOLDER : "moa.classifiers.trees.HoeffdingTree",
+    #                         "l":"MC"
+    #                     }
+    #                 },
+    #                 "nominal_attributes":nominal_attributes,
+    #                 "moa_jar":os.path.join("moa-release-2020.12.0", "lib", "moa.jar"),
+    #                 **online_learner_cfg
+    #             },
+    #             **experiment_cfg
+    #         }, 
+    #         n_configs=args.n_configs
+    #     )
+    # )
+
+    # moa.classifiers.meta.StreamingRandomPatches -l (  moa.classifiers.HoeffdingTree -g 50 -c 0.01 ) -s 100 --o (Percentage (M * (m / 100)))
+    # -l (meta.StreamingRandomPatches -l (trees.HoeffdingTree -g 50 -c 0.01) -s 100 -o (Percentage (M * (m / 100)))
+    # models.extend(
+    #     generate_configs(
+    #         {
+    #             "model":MoaModel,
+    #             "model_params": {
+    #                 "moa_model":"moa.classifiers.meta.StreamingRandomPatches",
+    #                 "moa_params": {
+    #                     "l" : {
+    #                         MoaModel.MOA_EMPTY_PLACEHOLDER:"moa.classifiers.trees.HoeffdingTree",
+    #                         "g":50,
+    #                         "c":0.01
+    #                     },
+    #                     "s" : 100,
+    #                     "o" : "(Percentage (M * (m / 100)))"
+    #                 },
+    #                 "nominal_attributes":nominal_attributes,
+    #                 "moa_jar":os.path.join("moa-release-2020.12.0", "lib", "moa.jar"),
+    #                 **online_learner_cfg
+    #             },
+    #             **experiment_cfg
+    #         }, 
+    #         n_configs=args.n_configs
+    #     )
+    # )
+    # models.extend(
+    #     generate_configs(
+    #         {
+    #             "model":MoaModel,
+    #             "model_params": {
+    #                 "moa_model":"moa.classifiers.trees.EFDT",
+    #                 "moa_params": {
+    #                     "l" : Variation(["MC"]),
+    #                     "c" : Variation([0.1]),
+    #                     "g" : Variation([50])
+    #                 },
+    #                 "nominal_attributes":nominal_attributes,
+    #                 "moa_jar":os.path.join("moa-release-2020.12.0", "lib", "moa.jar"),
+    #                 **online_learner_cfg
+    #             },
+    #             **experiment_cfg
+    #         }, 
+    #         n_configs=args.n_configs
+    #     )
+    # )
+
+    # models.extend(
+    #     generate_configs(
+    #         {
+    #             "model":MoaModel,
+    #             "model_params": {
+    #                 #"moa_model":"HoeffdingTreeClassifier",
+    #                 "moa_model":"ExtremelyFastDecisionTreeClassifier",
+    #                 "moa_params": {
+    #                     "gracePeriodOption" : Variation([50]),
+    #                     "leafpredictionOption" : "MC",
+    #                     "splitConfidenceOption": Variation([0.1]),
+    #                 },
+    #                 "nominal_attributes":nominal_attributes,
+    #                 "moa_jar":os.path.join("moa-release-2020.12.0", "lib", "moa.jar"),
+    #                 **online_learner_cfg
+    #             },
+    #             **experiment_cfg
+    #         }, 
+    #         n_configs=args.n_configs
+    #     )
+    # )
+
+    # models.extend(
+    #     generate_configs(
+    #         {
+    #             "model":RiverModel,
+    #             "model_params": {
+    #                 #"river_model": "HoeffdingTreeClassifier",
+    #                 "river_model":"ExtremelyFastDecisionTreeClassifier",
+    #                 "river_params": {
+    #                     "grace_period" : Variation([50]),
+    #                     "split_confidence" : Variation([0.1]),
+    #                     "leaf_prediction" : Variation(["mc"]),
+    #                     "nominal_attributes":nominal_attributes
+    #                 },
+    #                 **online_learner_cfg
+    #             },
+    #             **experiment_cfg
+    #         },
+    #         n_configs=args.n_configs
+    #     )
+    # )    
+
+    # models.extend(
+    #     generate_configs(
+    #         {
+    #             "model":WindowedTree,
+    #             "model_params": {
+    #                 "max_depth":Variation([2, 3, 4, 5, 6, 7]),
+    #                 "seed":experiment_cfg["seed"],
+    #                 "batch_size":Variation([4, 8, 16, 32, 64, 128]),
+    #                 "splitter" : Variation(["best", "random"]),
+    #                 "criterion" : Variation(["gini","entropy"]), 
+    #                 **online_learner_cfg
+    #             },
+    #             **experiment_cfg
+    #         }, 
+    #         n_configs=args.n_configs
+    #     )
+    # )
 
     # models.extend(
     #     generate_configs(
@@ -244,35 +406,35 @@ for dataset in args.dataset:
     #     )
     # )
 
-    # models.extend(
-    #     generate_configs(
-    #         {
-    #             "model":PrimeModel,
-    #             "model_params": {
-    #                 "max_depth":8,
-    #                 "loss":"cross-entropy",
-    #                 "ensemble_regularizer":"hard-L1",
-    #                 "l_ensemble_reg":32,
-    #                 "tree_regularizer":None,
-    #                 "l_tree_reg":0,
-    #                 "normalize_weights":True,
-    #                 "init_weight":"average",
-    #                 "update_leaves":True,
-    #                 "seed":experiment_cfg["seed"],
-    #                 "batch_size":8,
-    #                 "step_size":1e-1,
-    #                 "additional_tree_options" : {
-    #                     "splitter" : "best",
-    #                     "criterion" : "gini"
-    #                 },
-    #                 "backend" : "python",
-    #                 **online_learner_cfg
-    #             },
-    #             **experiment_cfg
-    #         }, 
-    #         n_configs=args.n_configs
-    #     )
-    # )
+    models.extend(
+        generate_configs(
+            {
+                "model":PrimeModel,
+                "model_params": {
+                    "max_depth":Variation([2,4,6,8,10]),
+                    "loss":"cross-entropy",
+                    "ensemble_regularizer":"hard-L0",
+                    "l_ensemble_reg":Variation([8,32,64]),
+                    "tree_regularizer":None,
+                    "l_tree_reg":0,
+                    "normalize_weights":True,
+                    "init_weight":"average",
+                    "update_leaves":True,
+                    "seed":experiment_cfg["seed"],
+                    "batch_size":Variation([8,32,64,128]),
+                    "step_size":"adaptive",
+                    "additional_tree_options" : {
+                        "splitter" : "best",
+                        "criterion" : "gini"
+                    },
+                    "backend" : "python",
+                    **online_learner_cfg
+                },
+                **experiment_cfg
+            }, 
+            n_configs=args.n_configs
+        )
+    )
 
     # models.extend(
     #     generate_configs(
@@ -304,36 +466,6 @@ for dataset in args.dataset:
     #     )
     # )
 
-    models.extend(
-        generate_configs(
-            {
-                "model":PrimeModel,
-                "model_params": {
-                    "max_depth":Variation([4]),
-                    "loss":Variation(["mse"]),
-                    "ensemble_regularizer":"hard-L0",
-                    "l_ensemble_reg":Variation([64]),
-                    "tree_regularizer":None,
-                    "l_tree_reg":0,
-                    "normalize_weights":True,
-                    "init_weight":"average", #,
-                    "update_leaves":Variation([True]),
-                    "seed":experiment_cfg["seed"],
-                    "batch_size":Variation([4]),
-                    "step_size":Variation([5e-1]), #1e-1,5e-1,1,2,3,5,7,
-                    "additional_tree_options" : {
-                        "splitter" : Variation(["best"]),
-                        "criterion" : "gini" # entropy
-                    },
-                    "backend" : "python",
-                    **online_learner_cfg
-                },
-                **experiment_cfg
-            }, 
-            n_configs=args.n_configs
-        )
-    )
-
     # 96.39 % Accuarcy
     # Maybe average is the problem?
     # models.extend(
@@ -358,24 +490,6 @@ for dataset in args.dataset:
     #                     "is_nominal":is_nominal
     #                 },
     #                 "backend" : "c++",
-    #                 **online_learner_cfg
-    #             },
-    #             **experiment_cfg
-    #         }, 
-    #         n_configs=args.n_configs
-    #     )
-    # )
-
-    # models.extend(
-    #     generate_configs(
-    #         {
-    #             "model":WindowedTree,
-    #             "model_params": {
-    #                 "max_depth":Variation([2, 3, 4, 5, 6, 7]),
-    #                 "seed":experiment_cfg["seed"],
-    #                 "batch_size":Variation([4, 8, 16, 32, 64, 128]),
-    #                 "splitter" : Variation(["best", "random"]),
-    #                 "criterion" : "gini", 
     #                 **online_learner_cfg
     #             },
     #             **experiment_cfg
@@ -734,7 +848,7 @@ for dataset in args.dataset:
     # )
 
 
-random.shuffle(models)
+# random.shuffle(models)
 
 
 run_experiments(basecfg, models)

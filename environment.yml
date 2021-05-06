@@ -13,6 +13,7 @@ dependencies:
   - jupyter
   - tqdm
   - pip:
+    - JPype1
     - jax
     - jaxlib
     - tqdm

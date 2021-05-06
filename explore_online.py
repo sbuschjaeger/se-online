@@ -72,8 +72,6 @@ def nice_name(row):
 
 dataset = "elec"
 base_path = os.path.join("elec", "results")
-#dataset = "internet_ads"
-#dataset = "nomao"
 
 #base_path = os.path.join("multi", "results")
 all_subdirs = [os.path.join(base_path,d) for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
@@ -90,6 +88,7 @@ mean_accuracy = []
 mean_loss = []
 mean_params = []
 mean_time = []
+mean_trees = []
 
 for index, row in df.iterrows(): 
     experiment_path = row["out_path"]
@@ -111,18 +110,15 @@ for index, row in df.iterrows():
     traindfs.append(traindf)
     mean_accuracy.append(np.mean(metrics["accuracy"]))
     mean_params.append(np.mean(metrics["num_parameters"]))
-    # mean_loss.append(np.mean(metrics["loss"]))
-    # mean_time.append(np.mean(metrics["time"]))
+    mean_trees.append(np.mean(metrics["num_trees"]))
     
 
 df["mean_accuracy"] = mean_accuracy
 df["mean_params"] = mean_params
+df["mean_trees"] = mean_trees
 df["train_details"] = traindfs
 
-# df["mean_loss"] = mean_loss
-# df["mean_time"] = mean_time
-
-tabledf = df[["nice_name", "mean_accuracy", "mean_params", "scores.mean_fit_time"]]
+tabledf = df[["nice_name", "mean_accuracy", "mean_params", "mean_trees", "scores.mean_fit_time"]]
 tabledf = tabledf.sort_values(by=['mean_accuracy'], ascending = False)
 print("Processed {} experiments".format(len(tabledf)))
 display(HTML(tabledf.to_html()))

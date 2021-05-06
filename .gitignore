@@ -17,3 +17,5 @@ S1_Dataset
 S2_Dataset
 *.txt
 *.npy
+moa-release-2020.12.0/*
+
