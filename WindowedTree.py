@@ -100,6 +100,10 @@ class WindowedTree(OnlineLearner):
             return 1.0 / self.n_classes_ * np.ones((X.shape[0], self.n_classes_))
         else:
             proba = np.zeros(shape=(X.shape[0], self.n_classes_), dtype=np.float32)
+            if len(X.shape) < 2:
+                # add the implicit batch dimension via X[np.newaxis,:]
+                X = X[np.newaxis,:]
+            
             proba[:, self.model.classes_.astype(int)] += self.model.predict_proba(X)
 
             return proba
@@ -117,12 +121,12 @@ class WindowedTree(OnlineLearner):
         batch_data = np.array(self.cur_batch_x)
         batch_target = np.array(self.cur_batch_y)
 
-        output = np.array(self.predict_proba(data[np.newaxis,:]))[0]
+        # output = np.array(self.predict_proba(data[np.newaxis,:]))[0]
         
         self.model = DecisionTreeClassifier(max_depth = self.max_depth, random_state=self.dt_seed, splitter=self.splitter, criterion=self.criterion)
         self.dt_seed += 1
         self.model.fit(batch_data, batch_target)
 
-        accuracy = (output.argmax() == target) * 100.0
+        # accuracy = (output.argmax() == target) * 100.0
 
-        return {"accuracy": accuracy, "num_trees": self.num_trees(), "num_parameters" : self.num_parameters()}, output
+        # return {"accuracy": accuracy, "num_trees": self.num_trees(), "num_parameters" : self.num_parameters()}, output

@@ -144,14 +144,18 @@ class PrimeModel(OnlineLearner):
         batch_data = np.array(self.cur_batch_x)
         batch_target = np.array(self.cur_batch_y)
 
-        # This is a little in-efficient since self.model.next already gives the output
-        # and some statistics (depending on the backend). However, these statistics / output are for the entire batch and not the given example (data, target)
-        # The c++ bindings only supports batched data and thus we add the implicit batch dimension via data[np.newaxis,:]
-        output = np.array(self.model.predict_proba(data[np.newaxis,:]))[0]
         self.model.next(batch_data, batch_target)
-        accuracy = (output.argmax() == target) * 100.0
+        # output = np.array(self.model.predict_proba(data[np.newaxis,:]))[0]
+        # accuracy = (output.argmax() == target) * 100.0
 
-        return {"accuracy": accuracy, "num_trees": self.num_trees(), "num_parameters" : self.num_parameters()}, output
+        # return {"accuracy": accuracy, "num_trees": self.num_trees(), "num_parameters" : self.num_parameters()}, output
+
+    def predict_proba(self, X):
+        if len(X.shape) < 2:
+            # The c++ bindings only supports batched data and thus we add the implicit batch dimension via data[np.newaxis,:]
+            return np.array(self.model.predict_proba(X[np.newaxis,:]))[0]
+        else:
+            return self.model.predict_proba(X)
 
     def fit(self, X, y, sample_weight = None):
         if self.backend == "c++":

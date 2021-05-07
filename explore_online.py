@@ -67,11 +67,11 @@ def nice_name(row):
     
     return model_name
 
-#dataset = "gas-sensor"
-#base_path = os.path.join("gas-sensor", "results")
+dataset = "gas-sensor"
+base_path = os.path.join("gas-sensor", "results")
 
-dataset = "elec"
-base_path = os.path.join("elec", "results")
+# dataset = "elec"
+# base_path = os.path.join("elec", "results")
 
 #base_path = os.path.join("multi", "results")
 all_subdirs = [os.path.join(base_path,d) for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
@@ -142,8 +142,15 @@ for index, dff in shortdf.head(n=5).iterrows():
     m = dff["nice_name"]
 #for dff, m in zip(shortdf, shortdf["nice_name"].values):
     tdf = dff["train_details"]
+    if len(tdf) > 10000:
+        idx = np.linspace(0,len(tdf) - 1,10000,dtype=int)
+        tdf = tdf.iloc[idx]
+
     fig = fig.add_trace(go.Scatter(x=tdf["item_cnt"], y = tdf["loss_average"], mode="lines", name = m, marker=dict(color = colors[m])), row = 1, col = 1)
-    fig = fig.add_trace(go.Scatter(x=tdf["item_cnt"], y = tdf["accuracy_average"], mode="lines", name = m, showlegend = False, marker=dict(color = colors[m])), row = 2, col = 1)
+    
+    running_acc = np.convolve(tdf["accuracy"], np.ones(1024)/1024 , mode='valid')
+    fig = fig.add_trace(go.Scatter(x=tdf["item_cnt"], y = running_acc, mode="lines", name = m, showlegend = False, marker=dict(color = colors[m])), row = 2, col = 1)
+    #fig = fig.add_trace(go.Scatter(x=tdf["item_cnt"], y = tdf["accuracy_average"], mode="lines", name = m, showlegend = False, marker=dict(color = colors[m])), row = 2, col = 1)
     fig = fig.add_trace(go.Scatter(x=tdf["item_cnt"], y = tdf["num_parameters_average"], mode="lines", name = m, showlegend = False, marker=dict(color = colors[m])), row = 3, col = 1)
     fig = fig.add_trace(go.Scatter(x=tdf["item_cnt"], y = tdf["num_trees_average"], mode="lines", name = m, showlegend = False, marker=dict(color = colors[m])), row = 4, col = 1)
     fig = fig.add_trace(go.Scatter(x=tdf["item_cnt"], y = tdf["time"], mode="lines", name = m, showlegend = False, marker=dict(color = colors[m])), row = 5, col = 1)

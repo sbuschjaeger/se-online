@@ -37,7 +37,7 @@ def create_moa_model(base_model, model_params):
 
     # Make sure to use () so that cliStringToObject correctly parses sub-options
     base_model += dict_to_string(model_params)
-    print(base_model)
+    # print(base_model)
     # for key, value in model_params.items():
     #     base_model += " -{} ({})".format(key, value)
 
@@ -104,36 +104,40 @@ class MoaModel(OnlineLearner):
     def predict_proba_one(self, x):
         from com.yahoo.labs.samoa.instances import DenseInstance
 
-        # A more straight-forward solution would be to directly create a new instance with x, e.g.
-        #   dense_instance = DenseInstance(1.0, x)  
-        # But this does not always work because a DenseInstance must also reserve space for the label, even though this
-        # field is not used at all here. For example, StreamingRandomPatches will (correctly) set the label as missingValue
-        # for new examples and thus we need to provide space for that attribute - even though it is missing.
-        # This code somewhat adopted from the ArffReader
-        dense_instance = DenseInstance(len(x) + 1)
-        for i, xi in enumerate(x):
-            dense_instance.setValue(i, xi)
+        if self.header is None:
+            output = np.zeros(self.n_classes_)
+        else:
+            # A more straight-forward solution would be to directly create a new instance with x, e.g.
+            #   dense_instance = DenseInstance(1.0, x)  
+            # But this does not always work because a DenseInstance must also reserve space for the label, even though this
+            # field is not used at all here. For example, StreamingRandomPatches will (correctly) set the label as missingValue
+            # for new examples and thus we need to provide space for that attribute - even though it is missing.
+            # This code somewhat adopted from the ArffReader
+            dense_instance = DenseInstance(len(x) + 1)
+            for i, xi in enumerate(x):
+                dense_instance.setValue(i, xi)
 
-        dense_instance.setDataset(self.header)
-        #dense_instance.setClassValue(5)
-        output = self.model.getPredictionForInstance(dense_instance).getVotes()
+            dense_instance.setDataset(self.header)
+            #dense_instance.setClassValue(5)
+            output = self.model.getPredictionForInstance(dense_instance).getVotes()
 
-        # Okay MOA seems to be a bit weird here and I am super unsure about this now, but from my experiments and the code I read so far the following invariant seems to hold:
-        # The class mapping is always [0,1,2,3,...,n_classes-1]. A classifier will always output a prediction vector which is as long as the largest class it has witnessed by now -- regardless of the instance header we constructed. If a classifier has not yet seen any classes it will output an empty string. 
-        # https://github.com/Waikato/moa/blob/740e8ca7db30541d6d5deb4550eb3bdb557fa82f/moa/src/main/java/moa/classifiers/meta/OzaBag.java
-        output = np.append(np.array(output), np.zeros(self.n_classes_ - len(output)))
-        
-        # Sometimes MOA produces nan / inf values (especially when using NaiveBayes in leaf nodes of trees). There is a todo about this since the beginning of time (?)in https://github.com/Waikato/moa/blob/740e8ca7db30541d6d5deb4550eb3bdb557fa82f/moa/src/main/java/moa/classifiers/bayes/NaiveBayes.java#L51 but I guess it never occured as a problem in MOA because they use (see e.g. https://github.com/Waikato/moa/blob/740e8ca7db30541d6d5deb4550eb3bdb557fa82f/moa/src/main/java/moa/classifiers/AbstractClassifier.java#L54)
-        # 
-        # return Utils.maxIndex(getVotesForInstance(inst)) == (int) inst.classValue();
-        # 
-        # to measure the accuracy and do not compute losses?
-        # I try to approximate this by replacing nan/inf values as good as possible
+            # Okay MOA seems to be a bit weird here and I am super unsure about this now, but from my experiments and the code I read so far the following invariant seems to hold:
+            # The class mapping is always [0,1,2,3,...,n_classes-1]. A classifier will always output a prediction vector which is as long as the largest class it has witnessed by now -- regardless of the instance header we constructed. If a classifier has not yet seen any classes it will output an empty string. 
+            # https://github.com/Waikato/moa/blob/740e8ca7db30541d6d5deb4550eb3bdb557fa82f/moa/src/main/java/moa/classifiers/meta/OzaBag.java
+            output = np.append(np.array(output), np.zeros(self.n_classes_ - len(output)))
+            
+            # Sometimes MOA produces nan / inf values (especially when using NaiveBayes in leaf nodes of trees). There is a todo about this since the beginning of time (?)in https://github.com/Waikato/moa/blob/740e8ca7db30541d6d5deb4550eb3bdb557fa82f/moa/src/main/java/moa/classifiers/bayes/NaiveBayes.java#L51 but I guess it never occured as a problem in MOA because they use (see e.g. https://github.com/Waikato/moa/blob/740e8ca7db30541d6d5deb4550eb3bdb557fa82f/moa/src/main/java/moa/classifiers/AbstractClassifier.java#L54)
+            # 
+            # return Utils.maxIndex(getVotesForInstance(inst)) == (int) inst.classValue();
+            # 
+            # to measure the accuracy and do not compute losses?
+            # I try to approximate this by replacing nan/inf values as good as possible
 
-        # TODO this silently assumes that inf should be mapped to 1 which makes sense given that we normalize the output anyway afterwards
-        # However, if we have an output such as [inf, 5, 3.1] then inf should probably be mapped to a higher value
-        output = np.nan_to_num(output, nan=0, posinf=1, neginf=0)
+            # TODO this silently assumes that inf should be mapped to 1 which makes sense given that we normalize the output anyway afterwards
+            # However, if we have an output such as [inf, 5, 3.1] then inf should probably be mapped to a higher value
+            output = np.nan_to_num(output, nan=0, posinf=1, neginf=0)
 
+        # If for some reason the output only contains 0 entries (e.g. no header was yet set because next() was not called yet) then just return the default predictions
         if np.all(output==0):
             return 1.0 / self.n_classes_ * np.ones(self.n_classes_)
         else:
@@ -143,10 +147,13 @@ class MoaModel(OnlineLearner):
                 return output
 
     def predict_proba(self, X):
-        proba = []
-        for x in X:
-            proba.append(self.predict_proba_one(x))
-        return np.array(proba)
+        if len(X.shape) < 2:
+            return self.predict_proba_one(X)
+        else:
+            proba = []
+            for x in X:
+                proba.append(self.predict_proba_one(x))
+            return np.array(proba)
 
     def num_trees(self):
         if hasattr(self.model, "ensembleSizeOption"):
@@ -218,7 +225,7 @@ class MoaModel(OnlineLearner):
             instances.setClassIndex(len(data))
             self.header = InstancesHeader(instances)
 
-        output = self.predict_proba_one(data)
+        # output = self.predict_proba_one(data)
 
         # The DenseInstance is implemented via a double array which requires space for all features and the label. 
         # Thus increase the data array by one element
@@ -228,7 +235,7 @@ class MoaModel(OnlineLearner):
         dense_instance.setClassValue(target)
         self.model.trainOnInstance(dense_instance)
 
-        output = np.array(output)
-        accuracy = (output.argmax() == target) * 100.0
+        # output = np.array(output)
+        # accuracy = (output.argmax() == target) * 100.0
 
-        return {"accuracy": accuracy, "num_trees": self.num_trees(), "num_parameters" : self.num_parameters()}, output
+        # return {"accuracy": accuracy, "num_trees": self.num_trees(), "num_parameters" : self.num_parameters()}, output

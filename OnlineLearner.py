@@ -69,7 +69,7 @@ class OnlineLearner(ABC):
         random.seed(self.seed)
 
     @abstractmethod
-    def next(self, data, target, train=False, new_epoch = False):
+    def next(self, data, target):
         pass
     
     @abstractmethod
@@ -80,8 +80,11 @@ class OnlineLearner(ABC):
     def num_parameters(self):
         pass
 
-    def loss_(self, output, target):
-        # TODO DEBUG OUTPUT IN CASE OF PRIME + C++ Backend
+    @abstractmethod
+    def predict_proba(self, X):
+        pass
+
+    def compute_loss(self, output, target):
         target_one_hot = np.array( [1.0 if target == i else 0.0 for i in range(self.n_classes_)] )
         if self.eval_loss == "mse":
             loss = (output - target_one_hot) * (output - target_one_hot)
@@ -93,8 +96,38 @@ class OnlineLearner(ABC):
             loss = np.maximum(1.0 - target_one_hot * output, zeros)**2
         else:
             raise "Currently only the losses {{cross-entropy, mse, hinge2}} are supported, but you provided: {}".format(self.eval_loss)
-        return loss
+        return loss.mean() # For multiclass problems we use the mean over all classes
 
+    def compute_metrics(self, C, n):
+        p0 = np.trace(C) / n
+        pc = 0
+        for i in range(len(C)):
+            pc += np.sum(C[i,:]) / n * np.sum(C[:,i]) / n
+        pc /= n
+
+        if (p0 - pc) == 0:
+            kappa = 0
+        else:
+            kappa = (p0 - pc) / (1.0 - pc)
+
+        accuracy = p0 * 100.0
+
+        f1 = 0
+        for i in range(self.n_classes_):
+            tp = np.sum(C[i,i])
+            fp = np.sum(C[i, np.concatenate((np.arange(0, i), np.arange(i+1, self.n_classes_)))])
+            fn = np.sum(C[np.concatenate((np.arange(0, i), np.arange(i+1, self.n_classes_))), i])
+
+            precision = tp/(tp+fp) if (tp+fp) > 0 else 0
+            recall = tp/(tp+fn) if (tp+fn) > 0 else 0
+            # precision = C[i][i] 
+            # recall = np.sum(C[:,i])
+
+            if precision != 0 and recall != 0:
+                f1 += 2.0 * precision * recall / (precision + recall)
+        f1 /= self.n_classes_
+
+        return {"kappa":kappa, "accuracy":accuracy, "f1":f1}
     # def loss_(self, output, target):
     #     if self.eval_loss == "mse":
     #         target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
@@ -120,46 +153,39 @@ class OnlineLearner(ABC):
         self.y_ = y
 
         metrics = {}
-        item_cnt = 0
+        C = np.zeros( (self.n_classes_, self.n_classes_) )
+        n = 0
         with tqdm(total=X.shape[0], ncols=150, disable = not self.verbose) as pbar:
             for x,y in zip(X,y):
+                output = self.predict_proba(x)
+
                 # Update Model                    
                 start_time = time.time()
-                batch_metrics, output = self.next(x, y)
+                self.next(x, y)
                 item_time = time.time() - start_time
                 
-                # Extract statistics
-                for key,val in batch_metrics.items():
-                    if key != "loss":
-                        metrics[key] = np.concatenate( (metrics.get(key,[]), val), axis=None )
-                        if key + "_sum" in metrics:
-                            metrics[key + "_sum"].append(metrics[key + "_sum"][-1] + val)
-                        else:
-                            metrics[key + "_sum"] = [val]
+                n += 1
+                ypred = output.argmax()
+                C[ypred][y] += 1
+                item_metrics = self.compute_metrics(C, n)
+                item_metrics["time"] = item_time
+                item_metrics["loss"] = self.compute_loss(output, y)
+                
+                # Extract statistics and also compute cumulative sum for plotting later
+                for key,val in item_metrics.items():
+                    metrics[key] = np.concatenate( (metrics.get(key,[]), val), axis=None )
+                    if key + "_sum" in metrics:
+                        metrics[key + "_sum"].append(metrics[key + "_sum"][-1] + val)
+                    else:
+                        metrics[key + "_sum"] = [val]
 
-                loss = self.loss_(output, y).mean()
-                item_cnt += 1
+                metrics["item_cnt"] = np.concatenate( (metrics.get("item_cnt",[]), n), axis=None )
                 pbar.update(1)
-
-                metrics["loss"] = np.concatenate( (metrics.get("loss",[]), loss), axis=None )
-                if "loss_sum" in metrics:
-                    metrics["loss_sum"].append(metrics["loss_sum"][-1] + loss)
-                else:
-                    metrics["loss_sum"] = [loss]
-
-
-                metrics["time"] = np.concatenate( (metrics.get("time",[]), item_time), axis=None )
-                if "time_sum" in metrics:
-                    metrics["time_sum"].append(metrics["time_sum"][-1] + item_time)
-                else:
-                    metrics["time_sum"] = [item_time]
-
-                metrics["item_cnt"] = np.concatenate( (metrics.get("item_cnt",[]), item_cnt), axis=None )
 
                 m_str = ""
                 for key,val in metrics.items():
                     if "_sum" in key:
-                        m_str += "{} {:2.4f} ".format(key.split("_sum")[0], val[-1] / item_cnt)
+                        m_str += "{} {:2.4f} ".format(key.split("_sum")[0], val[-1] / n)
                 
                 desc = '{}'.format(
                     m_str
@@ -170,9 +196,8 @@ class OnlineLearner(ABC):
                 #     break
 
             if self.out_path is not None:
+                # TODO add gzip here
                 np.save(os.path.join(self.out_path, "training.npy"), metrics, allow_pickle=True)
-
-
 
         # for epoch in range(self.epochs):
         #     mini_batches = create_mini_batches(X, y, self.batch_size, self.shuffle, self.sliding_window) 

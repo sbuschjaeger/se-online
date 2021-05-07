@@ -56,10 +56,13 @@ class RiverModel(OnlineLearner):
         return pred
 
     def predict_proba(self, X):
-        proba = []
-        for x in X:
-            proba.append(self.predict_proba_one(x))
-        return np.array(proba)
+        if len(X.shape) < 2:
+            return self.predict_proba_one(X)
+        else:
+            proba = []
+            for x in X:
+                proba.append(self.predict_proba_one(x))
+            return np.array(proba)
 
     def num_trees(self):
         if hasattr(self.model, "n_models"):
@@ -88,13 +91,13 @@ class RiverModel(OnlineLearner):
         return n_nodes
 
     def next(self, data, target):
-        output = self.predict_proba_one(data)
+        # output = self.predict_proba_one(data)
         x_dict = {}
         for i, xi in enumerate(data):
             x_dict["att_" + str(i)] = xi
         self.model.learn_one(x_dict, target)
 
-        output = np.array(output)
-        accuracy = (output.argmax() == target) * 100.0
+        # output = np.array(output)
+        # accuracy = (output.argmax() == target) * 100.0
 
-        return {"accuracy": accuracy, "num_trees": self.num_trees(), "num_parameters" : self.num_parameters()}, output
+        # return {"accuracy": accuracy, "num_trees": self.num_trees(), "num_parameters" : self.num_parameters()}, output
