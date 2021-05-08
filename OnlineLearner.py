@@ -1,24 +1,14 @@
 import os
-from types import MethodWrapperType
 import numpy as np
 import random
 from tqdm import tqdm
-import json
 import time
-
-import jax
-from jax import grad
-from jax import value_and_grad
-from jax import jit
-from jax import vmap
-from jax import pmap
+import gzip
+import pickle
 
 from functools import partial
 
-from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.multiclass import unique_labels
-from sklearn.metrics import accuracy_score
 
 from scipy.special import softmax
 
@@ -127,7 +117,7 @@ class OnlineLearner(ABC):
                 f1 += 2.0 * precision * recall / (precision + recall)
         f1 /= self.n_classes_
 
-        return {"kappa":kappa, "accuracy":accuracy, "f1":f1}
+        return {"kappa":kappa, "accuracy":accuracy, "f1":f1, "num_parameters":self.num_parameters(), "num_trees":self.num_trees()}
     # def loss_(self, output, target):
     #     if self.eval_loss == "mse":
     #         target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
@@ -152,10 +142,12 @@ class OnlineLearner(ABC):
         self.X_ = X
         self.y_ = y
 
-        metrics = {}
+        metrics = {
+            "item_cnt" : np.arange(1, len(X) + 1)
+        }
         C = np.zeros( (self.n_classes_, self.n_classes_) )
         n = 0
-        with tqdm(total=X.shape[0], ncols=150, disable = not self.verbose) as pbar:
+        with tqdm(total=X.shape[0], ncols=180, disable = not self.verbose) as pbar:
             for x,y in zip(X,y):
                 output = self.predict_proba(x)
 
@@ -164,29 +156,34 @@ class OnlineLearner(ABC):
                 self.next(x, y)
                 item_time = time.time() - start_time
                 
-                n += 1
                 ypred = output.argmax()
                 C[ypred][y] += 1
-                item_metrics = self.compute_metrics(C, n)
+                # We just added one value another value to C, so supply "n+1" to compute_metrics
+                item_metrics = self.compute_metrics(C, n + 1)
                 item_metrics["time"] = item_time
                 item_metrics["loss"] = self.compute_loss(output, y)
                 
                 # Extract statistics and also compute cumulative sum for plotting later
                 for key,val in item_metrics.items():
-                    metrics[key] = np.concatenate( (metrics.get(key,[]), val), axis=None )
-                    if key + "_sum" in metrics:
-                        metrics[key + "_sum"].append(metrics[key + "_sum"][-1] + val)
+                    if key not in metrics:
+                        metrics[key] = np.zeros( len(X) )
+
+                    metrics[key][n] = val
+                    
+                    if key + "_sum" not in metrics:
+                        metrics[key + "_sum"] = np.zeros( len(X) )
+                        metrics[key + "_sum"][n] = val
                     else:
-                        metrics[key + "_sum"] = [val]
-
-                metrics["item_cnt"] = np.concatenate( (metrics.get("item_cnt",[]), n), axis=None )
-                pbar.update(1)
-
+                        metrics[key + "_sum"][n] = metrics[key + "_sum"][n - 1] + val
+                
                 m_str = ""
                 for key,val in metrics.items():
                     if "_sum" in key:
-                        m_str += "{} {:2.4f} ".format(key.split("_sum")[0], val[-1] / n)
+                        m_str += "{} {:2.4f} ".format(key.split("_sum")[0], val[n] / (n + 1))
                 
+                pbar.update(1)
+                n += 1
+
                 desc = '{}'.format(
                     m_str
                 )
@@ -196,8 +193,8 @@ class OnlineLearner(ABC):
                 #     break
 
             if self.out_path is not None:
-                # TODO add gzip here
-                np.save(os.path.join(self.out_path, "training.npy"), metrics, allow_pickle=True)
+                pickle.dump(metrics, gzip.open(os.path.join(self.out_path, "training.npy.gz"), "wb"))
+                # np.save(gzip.open(os.path.join(self.out_path, "training.npy.gz"), "wb"), metrics, allow_pickle=True)
 
         # for epoch in range(self.epochs):
         #     mini_batches = create_mini_batches(X, y, self.batch_size, self.shuffle, self.sliding_window) 

@@ -89,7 +89,12 @@ class MoaModel(OnlineLearner):
         self.nominal_attributes = nominal_attributes
         self.header = None
 
-        jpype.startJVM(classpath=[moa_jar])
+        try:
+            # In multi-threaded environment there might be a JVM already running which can lead to errors here. If thats the case we just ignore the exception
+            # TODO improve handling here
+            jpype.startJVM(classpath=[moa_jar])
+        except OSError as error:
+            pass
 
         from java.lang import System
         from java.io import PrintStream, File
@@ -167,15 +172,18 @@ class MoaModel(OnlineLearner):
 
     def num_parameters(self):
         def get_tree_params(tree):
-            # Okay for some reason getNodeCount() was not implemented in EFDT and thus we do some reflection stuff to access
-            # the protected fields to get the node count. You know, just your typical Java stuff - Yay \o/
-            node_cnt = 0
-            clazz = tree.getClass()
-            for f in ["decisionNodeCount", "activeLeafNodeCount", "inactiveLeafNodeCount"]:
-                field = clazz.getDeclaredField(f)
-                field.setAccessible(1)
-                node_cnt += field.get(tree)
-            return node_cnt
+            if hasattr(tree, "getNodeCount"):
+                return tree.getNodeCount()
+            else:
+                # Okay for some reason getNodeCount() was not implemented in EFDT and thus we do some reflection stuff to access
+                # the protected fields to get the node count. You know, just your typical Java stuff - Yay \o/
+                node_cnt = 0
+                clazz = tree.getClass()
+                for f in ["decisionNodeCount", "activeLeafNodeCount", "inactiveLeafNodeCount"]:
+                    field = clazz.getDeclaredField(f)
+                    field.setAccessible(1)
+                    node_cnt += field.get(tree)
+                return node_cnt
 
         if hasattr(self.model, "ensembleSizeOption"):
             # ensemble is a protected field in meta classifiers so we use the same reflection "trick" from above to access it.

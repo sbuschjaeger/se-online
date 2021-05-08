@@ -5,6 +5,8 @@ from pandas.io.json import json_normalize
 import os
 import json 
 from IPython.display import display, HTML
+import gzip
+import pickle
 
 def read_jsonl(path):
     data = []
@@ -23,7 +25,12 @@ name_mapping = {
     "BaggingClassifier":"Bag",
     "PrimeModel":"PM",
     "JaxModel":"SDT",
-    "WindowedTree":"WT"
+    "WindowedTree":"WT",
+    "moa.classifiers.meta.AdaptiveRandomForest":"ARF",
+    "moa.classifiers.trees.HoeffdingTree":"HT",
+    "moa.classifiers.trees.EFDT":"ET",
+    "moa.classifiers.meta.StreamingRandomPatches":"SRP",
+    "moa.classifiers.meta.OzaBag":"Bag"
 }
 
 def nice_name(row):
@@ -58,6 +65,8 @@ def nice_name(row):
             row.get("model_params.batch_size", "None"), 
             row.get("model_params.splitter", "None"),
         )
+    elif row["model"] == "MoaModel":
+        model_name = name_mapping[row["model_params.moa_model"]]
     else:
         model_name = name_mapping[row["model"]]
     # elif row["model"] == "JaxModel":
@@ -67,8 +76,9 @@ def nice_name(row):
     
     return model_name
 
+base_path = "/rdata/s01b_ls8_000/buschjae/multi/results"
 dataset = "gas-sensor"
-base_path = os.path.join("gas-sensor", "results")
+#base_path = os.path.join("gas-sensor", "results")
 
 # dataset = "elec"
 # base_path = os.path.join("elec", "results")
@@ -91,26 +101,39 @@ mean_time = []
 mean_trees = []
 
 for index, row in df.iterrows(): 
-    experiment_path = row["out_path"]
-    metrics = np.load(os.path.join(row["out_path"], "training.npy"), allow_pickle=True).item()
-    
-    tmp = {
-        "accuracy":metrics["accuracy"],
-        "num_parameters":metrics["num_parameters"],
-        "num_trees":metrics["num_trees"],
-        "loss":metrics["loss"],
-        "item_cnt":metrics["item_cnt"],
-        "time":metrics["time_sum"],
-        "loss_average":metrics["loss_sum"] / metrics["item_cnt"],
-        "num_parameters_average":metrics["num_parameters_sum"] / metrics["item_cnt"],
-        "num_trees_average":metrics["num_trees_sum"] / metrics["item_cnt"],
-        "accuracy_average":metrics["accuracy_sum"] / metrics["item_cnt"]
-    }
-    traindf = pd.DataFrame(tmp)
-    traindfs.append(traindf)
-    mean_accuracy.append(np.mean(metrics["accuracy"]))
-    mean_params.append(np.mean(metrics["num_parameters"]))
-    mean_trees.append(np.mean(metrics["num_trees"]))
+    try:
+        experiment_path = row["out_path"]
+        # with gzip.open(os.path.join(row["out_path"], "training.npy.gz"), 'rb') as ifp:
+        #     print(ifp)
+        #     metrics = np.load(ifp, allow_pickle=True)
+        gzip_file = gzip.GzipFile(os.path.join(row["out_path"], "training.npy.gz"), "rb")
+        metrics = pickle.load(gzip_file)
+        # metrics = np.load(gzip_file, allow_pickle=True)
+
+        tmp = {
+            "accuracy":metrics["accuracy"],
+            "num_parameters":metrics["num_parameters"],
+            "num_trees":metrics["num_trees"],
+            "loss":metrics["loss"],
+            "item_cnt":metrics["item_cnt"],
+            "time":metrics["time_sum"],
+            "loss_average":metrics["loss_sum"] / metrics["item_cnt"],
+            "num_parameters_average":metrics["num_parameters_sum"] / metrics["item_cnt"],
+            "num_trees_average":metrics["num_trees_sum"] / metrics["item_cnt"],
+            "accuracy_average":metrics["accuracy_sum"] / metrics["item_cnt"]
+        }
+        traindf = pd.DataFrame(tmp)
+        traindfs.append(traindf)
+        mean_accuracy.append(np.mean(metrics["accuracy"]))
+        mean_params.append(np.mean(metrics["num_parameters"]))
+        mean_trees.append(np.mean(metrics["num_trees"]))
+    except Exception as e:
+        print(e)
+        traindfs.append(pd.DataFrame())
+        mean_accuracy.append(0)
+        mean_params.append(0)
+        mean_trees.append(0)
+        break
     
 
 df["mean_accuracy"] = mean_accuracy

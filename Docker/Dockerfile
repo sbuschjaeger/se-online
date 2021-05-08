@@ -14,7 +14,8 @@ RUN apt-get update && \
        htop \
        tmux \
        cmake \
-       less
+       less \
+       default-jre
 
 # Install Anaconda
 ENV PATH="/opt/miniconda3/bin:$PATH"
