@@ -250,16 +250,15 @@ for dataset in args.dataset:
                     "tree_regularizer":None,
                     "l_tree_reg":0,
                     "normalize_weights":True,
-                    "init_weight":"average",
                     "update_leaves":Variation([True, False]),
                     "seed":experiment_cfg["seed"],
                     "batch_size":Variation([4,8,32,64]),
                     "step_size":Variation(["adaptive",4e-1,3.5e-1,3e-1,1e-1,2e-1,2.5e-1,5e-1]),
                     "additional_tree_options" : {
-                        "splitter" : Variation(["random","best"]),
-                        "criterion" : Variation(["gini", "entropy"])
+                        "tree_init_mode" : Variation(["train","fully-random", "random"]),
+                        "is_nominal" : is_nominal
                     },
-                    "backend" : "python",
+                    "backend" : "c++",
                     **online_learner_cfg
                 },
                 **experiment_cfg
@@ -268,6 +267,7 @@ for dataset in args.dataset:
         )
     )
 
+    '''
     models.extend(
         generate_configs(
             {
@@ -397,7 +397,9 @@ for dataset in args.dataset:
             n_configs=args.n_configs
         )
     )
-    
+    '''
+
+
     '''
     models.extend(
         generate_configs(

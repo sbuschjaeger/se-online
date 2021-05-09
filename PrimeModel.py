@@ -168,4 +168,47 @@ class PrimeModel(OnlineLearner):
             self.additional_tree_options
         )
 
+        # Since we do not call "fit" of the Prime we have to prepare everything manually here
+        if self.backend == "c++":
+            if self.step_size == "adaptive":
+                step_size_mode = "adaptive"
+                step_size = 0
+            else:
+                step_size_mode = "constant"
+                step_size = float(self.step_size)
+
+            if self.update_leaves:
+                tree_update_mode = "gradient"
+            else:
+                tree_update_mode = "none"
+            
+            if self.is_nominal is None:
+                is_nominal = [False for _ in range(X.shape[1])]
+            else:
+                is_nominal = self.is_nominal
+
+            ensemble_regularizer = "none" if self.ensemble_regularizer is None else str(self.ensemble_regularizer)
+            tree_regularizer = "none" if self.tree_regularizer is None else str(self.tree_regularizer)
+
+            self.model.model = CPrimeBindings(
+                len(unique_labels(y)), 
+                self.max_depth,
+                self.seed,
+                self.normalize_weights,
+                self.loss,
+                step_size,
+                step_size_mode,
+                is_nominal,
+                ensemble_regularizer,
+                float(self.l_ensemble_reg),
+                tree_regularizer,
+                float(self.l_tree_reg),
+                self.tree_init_mode, 
+                tree_update_mode
+            )
+        
+        self.model.classes_ = unique_labels(y)
+        self.model.n_classes_ = len(self.model.classes_)
+        self.model.n_outputs_ = self.model.n_classes_
+        
         super().fit(X,y, sample_weight)
