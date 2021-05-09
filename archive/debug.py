@@ -464,8 +464,7 @@ shared_cfg = {
 
 grad_cfg = {
     #"max_depth":5,
-    "step_size":1e-4,
-    "init_weight":1.0
+    "step_size":1e-2,
 }
 
 models = []

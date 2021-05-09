@@ -77,7 +77,13 @@ def nice_name(row):
     return model_name
 
 base_path = "/rdata/s01b_ls8_000/buschjae/multi/results"
-dataset = "gas-sensor"
+#dataset = "agrawal_a"
+#dataset = "agrawal_g"
+# dataset = "led_a"
+# dataset = "led_g"
+# dataset = "rbf_f"
+# dataset = "rbf_m"
+# dataset = "elec"
 #base_path = os.path.join("gas-sensor", "results")
 
 # dataset = "elec"
@@ -106,6 +112,7 @@ for index, row in df.iterrows():
         # with gzip.open(os.path.join(row["out_path"], "training.npy.gz"), 'rb') as ifp:
         #     print(ifp)
         #     metrics = np.load(ifp, allow_pickle=True)
+        print("READING {}".format(os.path.join(row["out_path"], "training.npy.gz")))
         gzip_file = gzip.GzipFile(os.path.join(row["out_path"], "training.npy.gz"), "rb")
         metrics = pickle.load(gzip_file)
         # metrics = np.load(gzip_file, allow_pickle=True)
@@ -122,20 +129,21 @@ for index, row in df.iterrows():
             "num_trees_average":metrics["num_trees_sum"] / metrics["item_cnt"],
             "accuracy_average":metrics["accuracy_sum"] / metrics["item_cnt"]
         }
+
         traindf = pd.DataFrame(tmp)
         traindfs.append(traindf)
-        mean_accuracy.append(np.mean(metrics["accuracy"]))
-        mean_params.append(np.mean(metrics["num_parameters"]))
-        mean_trees.append(np.mean(metrics["num_trees"]))
+        # Although we only samle up to Nmax entries we make sure hat we also sample the last entry via np.linspace which contains the sum over the entire stream for the specific metrics. This way, we make sure to obtain the correct average
+        mean_accuracy.append(tmp["accuracy_average"][-1])
+        mean_params.append(tmp["num_parameters_average"][-1])
+        mean_trees.append(tmp["num_trees_average"][-1])
     except Exception as e:
         print(e)
-        traindfs.append(pd.DataFrame())
+        #traindfs.append(pd.DataFrame())
         mean_accuracy.append(0)
         mean_params.append(0)
         mean_trees.append(0)
-        break
     
-
+print("Preparing tables")
 df["mean_accuracy"] = mean_accuracy
 df["mean_params"] = mean_params
 df["mean_trees"] = mean_trees

@@ -66,7 +66,6 @@ class PrimeModel(OnlineLearner):
                 tree_regularizer = None,
                 l_tree_reg = 0,
                 normalize_weights = False,
-                init_weight = "average",
                 update_leaves = False,
                 batch_size = 256,
                 verbose = False,
@@ -86,7 +85,7 @@ class PrimeModel(OnlineLearner):
             assert additional_tree_options["tree_init_mode"] in ["train", "fully-random", "random"], "Currently only {{train, fully-random, random}} as tree_init_mode is supported"
             self.tree_init_mode = additional_tree_options["tree_init_mode"]
         else:
-            self.tree_init_mode = "train^"
+            self.tree_init_mode = "train"
 
         if "is_nominal" in additional_tree_options:
             self.is_nominal = additional_tree_options["is_nominal"]
@@ -110,7 +109,6 @@ class PrimeModel(OnlineLearner):
         self.tree_regularizer = tree_regularizer
         self.l_tree_reg = l_tree_reg
         self.normalize_weights = normalize_weights
-        self.init_weight = init_weight
         self.update_leaves = update_leaves
         self.batch_size = batch_size
         self.verbose = verbose
@@ -126,10 +124,7 @@ class PrimeModel(OnlineLearner):
         return self.model.num_trees()
 
     def num_parameters(self):
-        if self.backend == "c++":
-            return (2**(self.max_depth + 1) - 1)*self.num_trees()
-        else:
-            return self.model.num_parameters()
+        return self.model.num_parameters()
 
     def next(self, data, target):
         # The python and the c++ backend are both batched algorithms
@@ -151,75 +146,26 @@ class PrimeModel(OnlineLearner):
         # return {"accuracy": accuracy, "num_trees": self.num_trees(), "num_parameters" : self.num_parameters()}, output
 
     def predict_proba(self, X):
-        if len(X.shape) < 2:
-            # The c++ bindings only supports batched data and thus we add the implicit batch dimension via data[np.newaxis,:]
-            return np.array(self.model.predict_proba(X[np.newaxis,:]))[0]
-        else:
-            return self.model.predict_proba(X)
+        return self.model.predict_proba(X)
 
     def fit(self, X, y, sample_weight = None):
-        if self.backend == "c++":
-            if self.init_weight in ["average", "max"]:
-                weight_init_mode = self.init_weight
-                init_weight = 1.0
-            else:
-                weight_init_mode = "constant"
-                init_weight = self.init_weight
-            
-            if self.update_leaves:
-                tree_update_mode = "gradient"
-            else:
-                tree_update_mode = "none"
-            
-            if self.is_nominal is None:
-                is_nominal = [False for _ in range(X.shape[1])]
-            else:
-                is_nominal = self.is_nominal
+        self.model = Prime(
+            self.max_depth,
+            self.loss,
+            self.step_size,
+            self.ensemble_regularizer,
+            self.l_ensemble_reg,
+            self.tree_regularizer,
+            self.l_tree_reg,
+            self.normalize_weights,
+            self.update_leaves,
+            self.batch_size,
+            self.verbose,
+            self.out_path,
+            self.seed,
+            1,
+            self.backend,
+            self.additional_tree_options
+        )
 
-            ensemble_regularizer = "none" if self.ensemble_regularizer is None else str(self.ensemble_regularizer)
-            tree_regularizer = "none" if self.tree_regularizer is None else str(self.tree_regularizer)
-
-            self.model = CPrimeBindings(
-                len(unique_labels(y)), 
-                self.max_depth,
-                self.seed,
-                self.normalize_weights,
-                self.loss,
-                self.step_size,
-                weight_init_mode,
-                float(init_weight),
-                is_nominal,
-                ensemble_regularizer,
-                float(self.l_ensemble_reg),
-                tree_regularizer,
-                float(self.l_tree_reg),
-                self.tree_init_mode, 
-                tree_update_mode
-            )
-        else:
-            self.model = Prime(
-                self.max_depth,
-                self.loss,
-                self.step_size,
-                self.ensemble_regularizer,
-                self.l_ensemble_reg,
-                self.tree_regularizer,
-                self.l_tree_reg,
-                self.normalize_weights,
-                self.init_weight,
-                self.update_leaves,
-                self.batch_size,
-                self.verbose,
-                self.out_path,
-                self.seed,
-                1,
-                self.additional_tree_options
-            )
-
-            self.model.classes_ = sorted(unique_labels(y)) # TODO rework this for CPrime
-            self.model.n_classes_ = len(self.model.classes_)
-            self.model.n_outputs_ = self.model.n_classes_
-            
-            self.model.X_ = X
-            self.model.y_ = y
         super().fit(X,y, sample_weight)
