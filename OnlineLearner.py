@@ -5,6 +5,7 @@ from tqdm import tqdm
 import time
 import gzip
 import pickle
+import river
 
 from functools import partial
 
@@ -88,7 +89,25 @@ class OnlineLearner(ABC):
             raise "Currently only the losses {{cross-entropy, mse, hinge2}} are supported, but you provided: {}".format(self.eval_loss)
         return loss.mean() # For multiclass problems we use the mean over all classes
 
-    def compute_metrics(self, C, n):
+    def compute_metrics(self, C, sum_row, sum_col, n):
+        p0 = np.trace(C) / n
+
+        pe = 0
+        for c in range(len(C)):
+            estimation_row = sum_row[c] / n
+            estimation_col = sum_col[c] / n
+            pe += estimation_row * estimation_col
+        
+        kappa = (p0 - pe) / (1.0 - pe)
+        if (p0 - pe) == 0:
+            kappa = 0
+        else:
+            kappa = (p0 - pe) / (1.0 - pe)
+
+        # HM?
+        pe = self.cm.weight_majority_classifier / self.cm.n_samples
+        return (p0 - pe) / (1.0 - pe)
+
         p0 = np.trace(C) / n
         pc = 0
         for i in range(len(C)):
@@ -142,10 +161,20 @@ class OnlineLearner(ABC):
         self.X_ = X
         self.y_ = y
 
+        river_metrics = {
+            "accuracy":river.metrics.Accuracy(),
+            "kappa":river.metrics.CohenKappa(),
+            "kappaM":river.metrics.KappaM(),
+            "kappaT":river.metrics.KappaT(),
+        }
+
         metrics = {
             "item_cnt" : np.arange(1, len(X) + 1)
         }
-        C = np.zeros( (self.n_classes_, self.n_classes_) )
+        # C = np.zeros( (self.n_classes_, self.n_classes_) )
+        # sum_row = np.zeros(self.n_classes_)
+        # sum_col = np.zeros(self.n_classes_)
+
         n = 0
         with tqdm(total=X.shape[0], ncols=180, disable = not self.verbose) as pbar:
             for x,y in zip(X,y):
@@ -157,11 +186,22 @@ class OnlineLearner(ABC):
                 item_time = time.time() - start_time
                 
                 ypred = output.argmax()
-                C[ypred][y] += 1
-                # We just added one value another value to C, so supply "n+1" to compute_metrics
-                item_metrics = self.compute_metrics(C, n + 1)
-                item_metrics["time"] = item_time
-                item_metrics["loss"] = self.compute_loss(output, y)
+                # C[ypred][y] += 1
+                # sum_row[y] += 1
+                # sum_col[ypred] += 1
+
+                item_metrics = {
+                    "loss":self.compute_loss(output, y),
+                    "time":item_time
+                }
+                for key, rm in river_metrics.items():
+                    rm.update(y,ypred)
+                    item_metrics[key] = rm.get()
+
+                # # We just added one value another value to C, so supply "n+1" to compute_metrics
+                # item_metrics = self.compute_metrics(C, sum_row, sum_col, n + 1)
+                # item_metrics["time"] = item_time
+                # item_metrics["loss"] = self.compute_loss(output, y)
                 
                 # Extract statistics and also compute cumulative sum for plotting later
                 for key,val in item_metrics.items():

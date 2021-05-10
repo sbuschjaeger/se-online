@@ -238,27 +238,84 @@ for dataset in args.dataset:
     np.random.seed(experiment_cfg["seed"])
     print("Generating random hyperparameter configurations")
 
+    # TODO LOSS DEBUG FOR THIS. WHY IS IT SO HIGH?
+    # TODO WHY ARE THERE OVERFLOWS IN MULTIPLY?
+    # models.extend(
+    #     generate_configs(
+    #         {
+    #             "model":PrimeModel,
+    #             "model_params": {
+    #                 "max_depth":Variation([8]),
+    #                 "loss":Variation(["mse"]),
+    #                 "ensemble_regularizer":"hard-L0",
+    #                 "l_ensemble_reg":Variation([128]),
+    #                 "tree_regularizer":None,
+    #                 "l_tree_reg":0,
+    #                 "normalize_weights":True,
+    #                 "update_leaves":Variation([True]),
+    #                 "seed":experiment_cfg["seed"],
+    #                 "batch_size":Variation([128]),
+    #                 "step_size":Variation([5e-1]),
+    #                 "additional_tree_options" : {
+    #                     "tree_init_mode" : Variation(["fully-random"]),
+    #                     "is_nominal" : is_nominal
+    #                 },
+    #                 "backend" : "c++",
+    #                 **online_learner_cfg
+    #             },
+    #             **experiment_cfg
+    #         }, 
+    #         n_configs=args.n_configs
+    #     )
+    # )
+
+    # models.extend(
+    #     generate_configs(
+    #         {
+    #             "model":PrimeModel,
+    #             "model_params": {
+    #                 "max_depth":Variation([2,4,6,8]),
+    #                 "loss":Variation(["mse"]),
+    #                 "ensemble_regularizer":"hard-L0",
+    #                 "l_ensemble_reg":Variation([4,8,16,32,64,128]),
+    #                 "tree_regularizer":None,
+    #                 "l_tree_reg":0,
+    #                 "normalize_weights":True,
+    #                 "update_leaves":Variation([True, False]),
+    #                 "seed":experiment_cfg["seed"],
+    #                 "batch_size":Variation([4,8,32,64,128]),
+    #                 "step_size":Variation(["adaptive",4e-1,3.5e-1,3e-1,1e-1,2e-1,2.5e-1,5e-1]),
+    #                 "additional_tree_options" : {
+    #                     "tree_init_mode" : Variation(["train","fully-random", "random"]),
+    #                     "is_nominal" : is_nominal
+    #                 },
+    #                 "backend" : "c++",
+    #                 **online_learner_cfg
+    #             },
+    #             **experiment_cfg
+    #         }, 
+    #         n_configs=args.n_configs
+    #     )
+    # )
+
     models.extend(
         generate_configs(
             {
-                "model":PrimeModel,
+                "model":MoaModel,
                 "model_params": {
-                    "max_depth":Variation([2,4,6,8]),
-                    "loss":Variation(["mse","cross-entropy"]),
-                    "ensemble_regularizer":"hard-L0",
-                    "l_ensemble_reg":Variation([4,8,16,32,64]),
-                    "tree_regularizer":None,
-                    "l_tree_reg":0,
-                    "normalize_weights":True,
-                    "update_leaves":Variation([True, False]),
-                    "seed":experiment_cfg["seed"],
-                    "batch_size":Variation([4,8,32,64]),
-                    "step_size":Variation(["adaptive",4e-1,3.5e-1,3e-1,1e-1,2e-1,2.5e-1,5e-1]),
-                    "additional_tree_options" : {
-                        "tree_init_mode" : Variation(["train","fully-random", "random"]),
-                        "is_nominal" : is_nominal
+                    "moa_model":"moa.classifiers.meta.StreamingRandomPatches",
+                    "moa_params": {
+                        "l" : {
+                            MoaModel.MOA_EMPTY_PLACEHOLDER:"moa.classifiers.trees.HoeffdingTree",
+                            "g":Variation([50,100,250]),
+                            "c":Variation([0.1,0.01,0.001]),
+                            "l":Variation(["MC", "NB"])
+                        },
+                        "s" : Variation([4,8,16,32,64]),
+                        "o" : "(Percentage (M * (m / 100)))"
                     },
-                    "backend" : "c++",
+                    "nominal_attributes":nominal_attributes,
+                    "moa_jar":os.path.join("moa-release-2020.12.0", "lib", "moa.jar"),
                     **online_learner_cfg
                 },
                 **experiment_cfg
@@ -398,7 +455,6 @@ for dataset in args.dataset:
         )
     )
     '''
-
 
     '''
     models.extend(
