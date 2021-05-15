@@ -238,14 +238,11 @@ for dataset in args.dataset:
     np.random.seed(experiment_cfg["seed"])
     print("Generating random hyperparameter configurations")
 
-    # TODO LOSS DEBUG FOR THIS. WHY IS IT SO HIGH?
-    # TODO WHY ARE THERE OVERFLOWS IN MULTIPLY?
     # models.extend(
     #     generate_configs(
     #         {
     #             "model":PrimeModel,
     #             "model_params": {
-    #                 "max_depth":Variation([8]),
     #                 "loss":Variation(["mse"]),
     #                 "ensemble_regularizer":"hard-L0",
     #                 "l_ensemble_reg":Variation([128]),
@@ -254,11 +251,12 @@ for dataset in args.dataset:
     #                 "normalize_weights":True,
     #                 "update_leaves":Variation([True]),
     #                 "seed":experiment_cfg["seed"],
-    #                 "batch_size":Variation([128]),
-    #                 "step_size":Variation([5e-1]),
+    #                 "batch_size":Variation([512]),
+    #                 "step_size":Variation([1e-3]),
     #                 "additional_tree_options" : {
-    #                     "tree_init_mode" : Variation(["fully-random"]),
-    #                     "is_nominal" : is_nominal
+    #                     "tree_init_mode" : Variation(["train"]),
+    #                     "is_nominal" : is_nominal,
+    #                     "max_depth":Variation([8]),
     #                 },
     #                 "backend" : "c++",
     #                 **online_learner_cfg
@@ -274,8 +272,7 @@ for dataset in args.dataset:
     #         {
     #             "model":PrimeModel,
     #             "model_params": {
-    #                 "max_depth":Variation([2,4,6,8]),
-    #                 "loss":Variation(["mse"]),
+    #                 "loss":Variation(["cross-entropy","mse"]),
     #                 "ensemble_regularizer":"hard-L0",
     #                 "l_ensemble_reg":Variation([4,8,16,32,64,128]),
     #                 "tree_regularizer":None,
@@ -286,6 +283,7 @@ for dataset in args.dataset:
     #                 "batch_size":Variation([4,8,32,64,128]),
     #                 "step_size":Variation(["adaptive",4e-1,3.5e-1,3e-1,1e-1,2e-1,2.5e-1,5e-1]),
     #                 "additional_tree_options" : {
+    #                     "max_depth":Variation([2,4,6,8,12]),
     #                     "tree_init_mode" : Variation(["train","fully-random", "random"]),
     #                     "is_nominal" : is_nominal
     #                 },
@@ -298,6 +296,25 @@ for dataset in args.dataset:
     #     )
     # )
 
+    models.extend(
+        generate_configs(
+            {
+                "model":WindowedTree,
+                "model_params": {
+                    "max_depth":Variation([2, 3, 4, 5, 6, 7]),
+                    "seed":experiment_cfg["seed"],
+                    "batch_size":Variation([2, 4, 8, 16, 32, 64, 128]),
+                    "splitter" : Variation(["best", "random"]),
+                    "criterion" : Variation(["gini","entropy"]), 
+                    **online_learner_cfg
+                },
+                **experiment_cfg
+            }, 
+            n_configs=args.n_configs
+        )
+    )
+
+    '''
     models.extend(
         generate_configs(
             {
@@ -324,25 +341,7 @@ for dataset in args.dataset:
         )
     )
 
-    '''
-    models.extend(
-        generate_configs(
-            {
-                "model":WindowedTree,
-                "model_params": {
-                    "max_depth":Variation([2, 3, 4, 5, 6, 7]),
-                    "seed":experiment_cfg["seed"],
-                    "batch_size":Variation([2, 4, 8, 16, 32, 64, 128]),
-                    "splitter" : Variation(["best", "random"]),
-                    "criterion" : Variation(["gini","entropy"]), 
-                    **online_learner_cfg
-                },
-                **experiment_cfg
-            }, 
-            n_configs=args.n_configs
-        )
-    )
-
+    
     models.extend(
         generate_configs(
             {

@@ -164,6 +164,7 @@ class OnlineLearner(ABC):
         river_metrics = {
             "accuracy":river.metrics.Accuracy(),
             "kappa":river.metrics.CohenKappa(),
+            # See https://link.springer.com/content/pdf/10.1007/978-3-642-40988-2_30.pdf
             "kappaM":river.metrics.KappaM(),
             "kappaT":river.metrics.KappaT(),
         }
@@ -179,6 +180,8 @@ class OnlineLearner(ABC):
         with tqdm(total=X.shape[0], ncols=180, disable = not self.verbose) as pbar:
             for x,y in zip(X,y):
                 output = self.predict_proba(x)
+                n_params = self.num_parameters()
+                n_trees = self.num_trees()
 
                 # Update Model                    
                 start_time = time.time()
@@ -192,12 +195,16 @@ class OnlineLearner(ABC):
 
                 item_metrics = {
                     "loss":self.compute_loss(output, y),
-                    "time":item_time
+                    "time":item_time,
+                    "num_parameters":n_params,
+                    "num_trees":n_trees
                 }
                 for key, rm in river_metrics.items():
                     rm.update(y,ypred)
                     item_metrics[key] = rm.get()
 
+                # See https://link.springer.com/content/pdf/10.1007/s10994-014-5441-4.pdf
+                item_metrics["kappaC"] = np.sqrt( np.maximum(item_metrics["kappa"],0) * np.maximum(item_metrics["kappaT"], 0) )
                 # # We just added one value another value to C, so supply "n+1" to compute_metrics
                 # item_metrics = self.compute_metrics(C, sum_row, sum_col, n + 1)
                 # item_metrics["time"] = item_time

@@ -16,7 +16,6 @@ dependencies:
     - JPype1
     - jax
     - jaxlib
-    - tqdm
     - git+https://github.com/online-ml/river
     - -e file:prime
     - -e file:experiment_runner

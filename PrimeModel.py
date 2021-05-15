@@ -21,8 +21,6 @@ class PrimeModel(OnlineLearner):
 
     Attributes
     ----------
-    max_depth : int
-        Maximum depth of DTs trained on each batch
     step_size : float
         The step_size used for stochastic gradient descent for opt 
     loss : str
@@ -58,7 +56,6 @@ class PrimeModel(OnlineLearner):
     """
 
     def __init__(self,
-                max_depth,
                 loss = "cross-entropy",
                 step_size = 1e-1,
                 ensemble_regularizer = None,
@@ -72,7 +69,9 @@ class PrimeModel(OnlineLearner):
                 out_path = None,
                 seed = None,
                 additional_tree_options = {
-                    "splitter" : "best", "criterion" : "gini"
+                    "splitter" : "best", 
+                    "criterion" : "gini", 
+                    "max_depth": None
                 },
                 eval_loss = "cross-entropy",
                 shuffle = False,
@@ -80,6 +79,9 @@ class PrimeModel(OnlineLearner):
         ):
 
         super().__init__(eval_loss, seed, verbose, shuffle, out_path)
+
+        if backend == "c++":
+            assert "max_depth" in additional_tree_options and additional_tree_options["max_depth"] > 0, "The C++ backend required a maximum tree depth to be set, but none was given"
 
         if "tree_init_mode" in additional_tree_options:
             assert additional_tree_options["tree_init_mode"] in ["train", "fully-random", "random"], "Currently only {{train, fully-random, random}} as tree_init_mode is supported"
@@ -101,7 +103,6 @@ class PrimeModel(OnlineLearner):
         random.seed(self.seed)
         
         self.backend = backend
-        self.max_depth = max_depth
         self.loss = loss
         self.step_size = step_size
         self.ensemble_regularizer = ensemble_regularizer
@@ -150,7 +151,6 @@ class PrimeModel(OnlineLearner):
 
     def fit(self, X, y, sample_weight = None):
         self.model = Prime(
-            self.max_depth,
             self.loss,
             self.step_size,
             self.ensemble_regularizer,
@@ -192,7 +192,7 @@ class PrimeModel(OnlineLearner):
 
             self.model.model = CPrimeBindings(
                 len(unique_labels(y)), 
-                self.max_depth,
+                self.additional_tree_options["max_depth"],
                 self.seed,
                 self.normalize_weights,
                 self.loss,
