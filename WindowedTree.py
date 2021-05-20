@@ -89,7 +89,7 @@ class WindowedTree(OnlineLearner):
         else:
             return 1
 
-    def num_parameters(self):
+    def num_nodes(self):
         if self.model is None:
             return 0
         else:

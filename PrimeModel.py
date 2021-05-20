@@ -124,8 +124,8 @@ class PrimeModel(OnlineLearner):
     def num_trees(self):
         return self.model.num_trees()
 
-    def num_parameters(self):
-        return self.model.num_parameters()
+    def num_nodes(self):
+        return self.model.num_nodes()
 
     def next(self, data, target):
         # The python and the c++ backend are both batched algorithms
@@ -144,7 +144,7 @@ class PrimeModel(OnlineLearner):
         # output = np.array(self.model.predict_proba(data[np.newaxis,:]))[0]
         # accuracy = (output.argmax() == target) * 100.0
 
-        # return {"accuracy": accuracy, "num_trees": self.num_trees(), "num_parameters" : self.num_parameters()}, output
+        # return {"accuracy": accuracy, "num_trees": self.num_trees(), "num_nodes" : self.num_nodes()}, output
 
     def predict_proba(self, X):
         return self.model.predict_proba(X)

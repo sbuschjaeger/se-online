@@ -9,10 +9,14 @@ dependencies:
   - pip
   - pandas
   - setuptools
-  - plotly
+  # - plotly
   - jupyter
   - tqdm
+  - gdown # Required for stream51 dataset
+  - pytorch
   - pip:
+    - kaggle
+    - matplotlib
     - JPype1
     - jax
     - jaxlib

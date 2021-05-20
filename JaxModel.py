@@ -2,6 +2,12 @@ import numpy as np
 import random
 from tqdm import tqdm
 
+from absl import logging
+# Disable "WARNING: Logging before flag parsing goes to stderr." message
+# logging._warn_preinit_stderr = 0
+# logging._warn_preinit_stdout = 0
+logging.set_verbosity(logging.ERROR)
+
 import jax
 from jax import grad
 from jax import value_and_grad
@@ -146,6 +152,7 @@ class JaxModel(OnlineLearner):
                 temp_start = 1,
                 temp_max = 6,
                 l_reg = 0,
+                batch_size = 128,
                 *args, **kwargs
                 ):
                         
@@ -162,74 +169,96 @@ class JaxModel(OnlineLearner):
         self.beta_max = temp_max
         self.temp_scaling = temp_scaling
         self.l_reg = l_reg
+        self.batch_size = batch_size
+        
+        self.cur_batch_x = [] 
+        self.cur_batch_y = [] 
 
     def predict_proba(self, X):
-        return predict_proba(X, self.W, self.B, self.leaf_preds, self.beta)
+        if len(X.shape) < 2:
+            X = X[np.newaxis,:]
+            return np.array(predict_proba(X, self.W, self.B, self.leaf_preds, self.beta))
+        else:
+            return np.array(predict_proba(X, self.W, self.B, self.leaf_preds, self.beta))
+
+    def num_bytes(self):
+        # 4 byte?
+        return self.num_trees() * (self.W[0].shape[0] * self.W[0].shape[1] + self.B[0].shape[0] + self.leaf_preds[0].shape[0] * self.leaf_preds[0].shape[1]) * 4
 
     def num_trees(self):
         return self.n_trees
 
-    def num_parameters(self):
-        return self.num_trees() * (self.W[0].shape[0] * self.W[0].shape[1] + self.B[0].shape[0] + self.leaf_preds[0].shape[0] * self.leaf_preds[0].shape[1])
+    def num_nodes(self):
+        return self.n_nodes
 
-    def next(self, data, target, train = False, new_epoch = False):
+    def next(self, data, target):
+        if len(self.cur_batch_x) > self.batch_size:
+            self.cur_batch_x.pop(0)
+            self.cur_batch_y.pop(0)
+
+        self.cur_batch_x.append(data)
+        self.cur_batch_y.append(target)
+        
+        batch_data = np.array(self.cur_batch_x)
+        batch_target = np.array(self.cur_batch_y)
+
         # If train = True we basically call predict_proba twice
         # TODO Change this
-        output = self.predict_proba(data)
+        #output = self.predict_proba(batch_data)
 
-        if train:
-            if new_epoch:
-                self.beta = min(self.temp_scaling * self.beta, self.beta_max)
+        # TODO Activate this?
+        # if new_epoch:
+        #     self.beta = min(self.temp_scaling * self.beta, self.beta_max)
 
-            def _loss(W, B, leaf_preds, x, beta):
-                pred = predict_proba(x, W, B, leaf_preds, beta) #self.all_pathes, self.soft
-                if self.loss == "mse":
-                    target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
-                    loss = (pred - target_one_hot) * (pred - target_one_hot)
-                elif self.loss == "cross-entropy":
-                    target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in target] )
-                    p = jax.nn.softmax(pred, axis=1)
-                    loss = -target_one_hot*jax.numpy.log(p)
-                
-                # std_reg = []
-                # for i in range(self.num_trees()):
-                #     std_reg.append( jax.numpy.std(self.leaf_preds[i], axis=0) )
-                # std_reg = jax.numpy.stack(std_reg)
-                
-                # loss = loss.mean() - std_reg.mean()
-                loss = loss.mean()
+        def _loss(W, B, leaf_preds, x, beta):
+            pred = predict_proba(x, W, B, leaf_preds, beta) #self.all_pathes, self.soft
+            if self.loss == "mse":
+                target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in batch_target] )
+                loss = (pred - target_one_hot) * (pred - target_one_hot)
+            elif self.loss == "cross-entropy":
+                target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in batch_target] )
+                p = jax.nn.softmax(pred, axis=1)
+                loss = -target_one_hot*jax.numpy.log(p)
+            
+            # std_reg = []
+            # for i in range(self.num_trees()):
+            #     std_reg.append( jax.numpy.std(self.leaf_preds[i], axis=0) )
+            # std_reg = jax.numpy.stack(std_reg)
+            
+            # loss = loss.mean() - std_reg.mean()
+            loss = loss.mean()
 
-                if self.l_reg > 0:
-                    w_reg = []
-                    b_reg = []
-                    for i in range(self.num_trees()):
-                        w_reg.append( jax.numpy.linalg.norm(self.W[i], ord = 1, axis=1) )
-                        b_reg.append( jax.numpy.linalg.norm(self.B[i], ord = 1, axis=1) )
+            if self.l_reg > 0:
+                w_reg = []
+                b_reg = []
+                for i in range(self.num_trees()):
+                    w_reg.append( jax.numpy.linalg.norm(self.W[i], ord = 1, axis=1) )
+                    b_reg.append( jax.numpy.linalg.norm(self.B[i], ord = 1, axis=1) )
 
-                    w_reg = jax.numpy.stack(w_reg)
-                    b_reg = jax.numpy.stack(b_reg)
-                    #return loss.mean() + self.l_reg * w_reg.mean() + self.l_reg * b_reg.mean()
-                    return loss + self.l_reg * w_reg.mean() + self.l_reg * b_reg.mean()
-                else:
-                    return loss#.mean()
+                w_reg = jax.numpy.stack(w_reg)
+                b_reg = jax.numpy.stack(b_reg)
+                #return loss.mean() + self.l_reg * w_reg.mean() + self.l_reg * b_reg.mean()
+                return loss + self.l_reg * w_reg.mean() + self.l_reg * b_reg.mean()
+            else:
+                return loss#.mean()
 
-            loss, gradient = value_and_grad(_loss, (0, 1, 2))(self.W, self.B, self.leaf_preds, data, self.beta)
-            W_grad, B_grad, leaf_preds_grad = gradient
+        loss, gradient = value_and_grad(_loss, (0, 1, 2))(self.W, self.B, self.leaf_preds, batch_data, self.beta)
+        W_grad, B_grad, leaf_preds_grad = gradient
 
-            for i in range(self.num_trees()):
-                self.W[i] = self.W[i] - self.step_size * W_grad[i]
-                self.B[i] = self.B[i] - self.step_size * B_grad[i]
-                self.leaf_preds[i] = self.leaf_preds[i] - self.step_size * leaf_preds_grad[i]
-                
-                # print("GRAD LEAFs:", leaf_preds_grad[i])
-                # print("LEAF:", self.leaf_preds[i])
-                # print("W:", self.W[i])
-                # print("B:", self.B[i])
+        for i in range(self.num_trees()):
+            self.W[i] = self.W[i] - self.step_size * W_grad[i]
+            self.B[i] = self.B[i] - self.step_size * B_grad[i]
+            self.leaf_preds[i] = self.leaf_preds[i] - self.step_size * leaf_preds_grad[i]
+            
+            # print("GRAD LEAFs:", leaf_preds_grad[i])
+            # print("LEAF:", self.leaf_preds[i])
+            # print("W:", self.W[i])
+            # print("B:", self.B[i])
 
-        accuracy = (output.argmax(axis=1) == target) * 100.0
-        n_trees = [self.num_trees() for _ in range(data.shape[0])]
-        n_param = [self.num_parameters() for _ in range(data.shape[0])]
-        return {"accuracy": accuracy, "num_trees": n_trees, "num_parameters" : n_param}, output
+        # accuracy = (output.argmax(axis=1) == batch_target) * 100.0
+        # n_trees = [self.num_trees() for _ in range(batch_data.shape[0])]
+        # n_param = [self.num_parameters() for _ in range(batch_data.shape[0])]
+        # return {"accuracy": accuracy, "num_trees": n_trees, "num_parameters" : n_param}, output
 
     def fit(self, X, y, sample_weight = None):
         classes_ = unique_labels(y)

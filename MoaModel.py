@@ -1,5 +1,6 @@
 import numpy as np
 import random
+import os
 import copy
 from numpy.core.fromnumeric import argsort
 from scipy.io.arff.arffread import Attribute
@@ -89,12 +90,15 @@ class MoaModel(OnlineLearner):
         self.nominal_attributes = nominal_attributes
         self.header = None
 
-        try:
-            # In multi-threaded environment there might be a JVM already running which can lead to errors here. If thats the case we just ignore the exception
-            # TODO improve handling here
-            jpype.startJVM(classpath=[moa_jar])
-        except OSError as error:
-            pass
+        if not jpype.isJVMStarted():
+            sizeof_path = os.path.join( os.path.split(moa_jar)[0], "sizeofag-1.0.4.jar")
+            jpype.startJVM("-Xms1G", "-Xmx4G", "-javaagent:{}".format(sizeof_path), classpath = moa_jar)
+
+        # try:
+        #     # In multi-threaded environment there might be a JVM already running which can lead to errors here. If thats the case we just ignore the exception
+        #     # TODO improve handling here
+        # except OSError as error:
+        #     pass
 
         from java.lang import System
         from java.io import PrintStream, File
@@ -165,12 +169,14 @@ class MoaModel(OnlineLearner):
             return self.model.ensembleSizeOption.getValue()
         else:
             return 1
-        # if hasattr(self.model, "n_models"):
-        #     return self.model.n_models
-        # else:
-        #     return 1
 
-    def num_parameters(self):
+    def num_bytes(self):
+        if hasattr(self.model, "measureByteSize"):
+             return self.model.measureByteSize()
+        else:
+            return 0
+
+    def num_nodes(self):
         def get_tree_params(tree):
             if hasattr(tree, "getNodeCount"):
                 return tree.getNodeCount()
@@ -180,9 +186,14 @@ class MoaModel(OnlineLearner):
                 node_cnt = 0
                 clazz = tree.getClass()
                 for f in ["decisionNodeCount", "activeLeafNodeCount", "inactiveLeafNodeCount"]:
-                    field = clazz.getDeclaredField(f)
-                    field.setAccessible(1)
-                    node_cnt += field.get(tree)
+                    try:
+                        field = clazz.getDeclaredField(f)
+                        if field != None:
+                            field.setAccessible(1)
+                            node_cnt += field.get(tree)
+                    except:
+                        pass
+
                 return node_cnt
 
         if hasattr(self.model, "ensembleSizeOption"):
@@ -191,6 +202,8 @@ class MoaModel(OnlineLearner):
             field = clazz.getDeclaredField("ensemble")
             field.setAccessible(1)
             estimators = field.get(self.model)
+            if estimators == None:
+                return 0
             node_cnt = 0
             for e in estimators:
                 if hasattr(e, "classifier"):

@@ -1,7 +1,7 @@
 # %%
 import numpy as np
 import pandas as pd
-from pandas.io.json import json_normalize 
+# from pandas.io.json import json_normalize 
 import os
 import json 
 from IPython.display import display, HTML
@@ -14,7 +14,7 @@ def read_jsonl(path):
         for line in f:
             data.append(json.loads(line))
 
-    return json_normalize(data)
+    return pd.json_normalize(data)
 
 name_mapping = {
     "SRP":"SRP",
@@ -23,14 +23,16 @@ name_mapping = {
     "AdaptiveRandomForestClassifier":"ARF",
     "AdaBoostClassifier":"AB",
     "BaggingClassifier":"Bag",
-    "PrimeModel":"PM",
+    "PrimeModel":"Prime",
     "JaxModel":"SDT",
     "WindowedTree":"WT",
     "moa.classifiers.meta.AdaptiveRandomForest":"ARF",
     "moa.classifiers.trees.HoeffdingTree":"HT",
     "moa.classifiers.trees.EFDT":"ET",
     "moa.classifiers.meta.StreamingRandomPatches":"SRP",
-    "moa.classifiers.meta.OzaBag":"Bag"
+    "moa.classifiers.meta.OzaBag":"Bag",
+    "moa.classifiers.bayes.NaiveBayes":"NB",
+    "moa.classifiers.meta.OnlineSmoothBoost":"SB"
 }
 
 def nice_name(row):
@@ -40,31 +42,41 @@ def nice_name(row):
             model_name += " + " + name_mapping[row["model_params.river_params.model"]]
     elif (row["model"] == "PrimeModel"):
         tree_init_mode = "None"
-        
         if row.get("model_params.additional_tree_options.tree_init_mode", None) is not None:
             tree_init_mode = row.get("model_params.additional_tree_options.tree_init_mode")
-        
-        if row.get("model_params.additional_tree_options.splitter", None) is not None:
-            tree_init_mode = row.get("model_params.additional_tree_options.splitter", None)
-
-        model_name = "{} d = {} λ1 = {} bs = {} lr = {} lt = {} b = {} ti = {} l = {}".format(
-            name_mapping[row["model"]],
-            row.get("model_params.additional_tree_options.max_depth", "None"),
-            row.get("model_params.l_ensemble_reg", "None"),
-            row.get("model_params.batch_size", "None"), 
-            row.get("model_params.step_size", "None"),
-            row.get("model_params.update_leaves", "None"), 
-            row.get("model_params.backend", "None"),
-            tree_init_mode,
-            row.get("model_params.loss", "None")
-        )
+        model_name = "{} {}".format(name_mapping[row["model"]], tree_init_mode)
     elif (row["model"] == "WindowedTree"):
-        model_name = "{} d = {} bs = {} ti = {}".format(
-            name_mapping[row["model"]],
-            row.get("model_params.max_depth", "None"),
-            row.get("model_params.batch_size", "None"), 
-            row.get("model_params.splitter", "None"),
-        )
+        tree_init_mode = "None"
+        if row.get("model_params.splitter", None) is not None:
+            tree_init_mode = row.get("model_params.splitter")
+        model_name = "{} {}".format(name_mapping[row["model"]], tree_init_mode)
+    # elif (row["model"] == "PrimeModel"):
+    #     tree_init_mode = "None"
+        
+    #     if row.get("model_params.additional_tree_options.tree_init_mode", None) is not None:
+    #         tree_init_mode = row.get("model_params.additional_tree_options.tree_init_mode")
+        
+    #     if row.get("model_params.additional_tree_options.splitter", None) is not None:
+    #         tree_init_mode = row.get("model_params.additional_tree_options.splitter", None)
+
+    #     model_name = "{} d = {} λ1 = {} bs = {} lr = {} lt = {} b = {} ti = {} l = {}".format(
+    #         name_mapping[row["model"]],
+    #         row.get("model_params.additional_tree_options.max_depth", "None"),
+    #         row.get("model_params.l_ensemble_reg", "None"),
+    #         row.get("model_params.batch_size", "None"), 
+    #         row.get("model_params.step_size", "None"),
+    #         row.get("model_params.update_leaves", "None"), 
+    #         row.get("model_params.backend", "None"),
+    #         tree_init_mode,
+    #         row.get("model_params.loss", "None")
+    #     )
+    # elif (row["model"] == "WindowedTree"):
+    #     model_name = "{} d = {} bs = {} ti = {}".format(
+    #         name_mapping[row["model"]],
+    #         row.get("model_params.max_depth", "None"),
+    #         row.get("model_params.batch_size", "None"), 
+    #         row.get("model_params.splitter", "None"),
+    #     )
     elif row["model"] == "MoaModel":
         model_name = name_mapping[row["model_params.moa_model"]]
     else:
@@ -76,43 +88,38 @@ def nice_name(row):
     
     return model_name
 
-base_path = "/rdata/s01b_ls8_000/buschjae/multi/results"
-datasets = ["elec","gas-sensor","agrawal_a","agrawal_g","led_a","led_g","rbf_f","rbf_m"]
-#dataset = "agrawal_a"
-#dataset = "agrawal_g"
-# dataset = "led_a"
-# dataset = "led_g"
-# dataset = "rbf_f"
-# dataset = "rbf_m"
-# dataset = "elec"
-#base_path = os.path.join("gas-sensor", "results")
+base_path = "/rdata/s01b_ls8_000/buschjae/"
 
-# dataset = "elec"
-# base_path = os.path.join("elec", "results")
+datasets = [
+    "elec", "gmsc", "gas-sensor", "nomao","weather", "spam",
+    "airlines", "covtype", "agrawal_a", "agrawal_g", "led_a", "led_g", "rbf_f", "rbf_m", 
+]
 
-#base_path = os.path.join("multi", "results")
-for dataset in datasets:
-    print("DATASET: {}".format(dataset))
-    all_subdirs = [os.path.join(base_path,d) for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
+for d in datasets:
+    dataset_path = os.path.join(base_path, d, "results")
+    all_subdirs = [os.path.join(dataset_path,di) for di in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, di))]
     latest_folder = max(all_subdirs, key=os.path.getmtime)
 
     print("Reading {}".format(os.path.join(latest_folder, "results.jsonl")))
-    df = read_jsonl(os.path.join(latest_folder, "results.jsonl"))
-    df["nice_name"] = df.apply(nice_name, axis=1)
-    df = df.round(decimals = 3)
-    df = df.loc[df["dataset"] == dataset]
-    print("Found {} experiments for {} dataset".format(len(df), dataset))
+    dff = read_jsonl(os.path.join(latest_folder, "results.jsonl"))
+    dff["nice_name"] = dff.apply(nice_name, axis=1)
+    dff = dff.round(decimals = 3)
+    combined = []
+    print_individual = False
+
+    print("Found {} experiments for {} dataset".format(len(dff), d))
     traindfs = []
     mean_accuracy = []
     mean_kappa = []
     mean_kappaM = []
     mean_kappaT = []
+    mean_kappaC = []
     mean_loss = []
     mean_params = []
     mean_time = []
     mean_trees = []
 
-    for index, row in df.iterrows(): 
+    for index, row in dff.iterrows(): 
         try:
             experiment_path = row["out_path"]
             # with gzip.open(os.path.join(row["out_path"], "training.npy.gz"), 'rb') as ifp:
@@ -128,6 +135,7 @@ for dataset in datasets:
                 "kappa":metrics["kappa"],
                 "kappaM":metrics["kappaM"],
                 "kappaT":metrics["kappaT"],
+                "kappaC":metrics["kappaC"],
                 #"num_parameters":metrics["num_parameters"],
                 #"num_trees":metrics["num_trees"],
                 "loss":metrics["loss"],
@@ -139,7 +147,8 @@ for dataset in datasets:
                 "accuracy_average":metrics["accuracy_sum"] / metrics["item_cnt"],
                 "kappa_average":metrics["kappa_sum"] / metrics["item_cnt"],
                 "kappaM_average":metrics["kappaM_sum"] / metrics["item_cnt"],
-                "kappaT_average":metrics["kappaT_sum"] / metrics["item_cnt"]
+                "kappaT_average":metrics["kappaT_sum"] / metrics["item_cnt"],
+                "kappaC_average":metrics["kappaC_sum"] / metrics["item_cnt"]
             }
 
             traindf = pd.DataFrame(tmp)
@@ -148,6 +157,7 @@ for dataset in datasets:
             mean_kappa.append(tmp["kappa_average"][-1])
             mean_kappaM.append(tmp["kappaM_average"][-1])
             mean_kappaT.append(tmp["kappaT_average"][-1])
+            mean_kappaC.append(tmp["kappaC_average"][-1])
             mean_accuracy.append(tmp["accuracy_average"][-1])
             #mean_params.append(tmp["num_parameters_average"][-1])
             #mean_trees.append(tmp["num_trees_average"][-1])
@@ -160,21 +170,30 @@ for dataset in datasets:
             mean_kappa.append(0)
             mean_kappaM.append(0)
             mean_kappaT.append(0)
+            mean_kappaC.append(0)
         
-    print("Preparing tables")
-    df["mean_accuracy"] = mean_accuracy
-    df["mean_kappa"] = mean_kappa
-    df["mean_kappaM"] = mean_kappaM
-    df["mean_kappaT"] = mean_kappaT
+    #print("Preparing tables")
+    dff["mean_accuracy"] = mean_accuracy
+    dff["mean_kappa"] = mean_kappa
+    dff["mean_kappaM"] = mean_kappaM
+    dff["mean_kappaT"] = mean_kappaT
+    dff["mean_kappaC"] = mean_kappaC
     # df["mean_params"] = mean_params
     # df["mean_trees"] = mean_trees
     # df["train_details"] = traindfs
 
-    tabledf = df[["nice_name", "mean_accuracy", "mean_kappa", "mean_kappaM", "mean_kappaT","scores.mean_fit_time"]]
-    tabledf = tabledf.sort_values(by=['mean_kappaT'], ascending = False)
-    print("Processed {} experiments".format(len(tabledf)))
-    display(HTML(tabledf.to_html()))
-    print("")
+    tabledf = dff[["dataset","nice_name", "mean_accuracy", "mean_kappa", "mean_kappaM", "mean_kappaT","mean_kappaC","scores.mean_fit_time"]]
+    tabledf = tabledf.sort_values(by=['mean_accuracy'], ascending = False)
+    tabledf = tabledf.groupby('nice_name').head(1)#.reset_index(level=1, drop=True)
+    #print("Processed {} experiments".format(len(tabledf)))
+    combined.append(tabledf)
+    if print_individual:
+        display(HTML(tabledf.to_html()))
+        print("")
+    break
+
+df = pd.concat(combined)
+display(HTML(df.to_html()))
 
 # %%
 import plotly.graph_objects as go
@@ -317,3 +336,30 @@ fig.show()
 # }
 
 # %%
+
+# import matplotlib as plt
+from matplotlib.pyplot import plot
+
+df = pd.read_csv(os.path.join("weather","weather.csv"))
+Y = df["target"].values.astype(np.int32)
+df = df.drop(["target"], axis=1)
+is_nominal = (df.nunique() == 2).values
+X = df.values.astype(np.float64)
+
+Y = Y[3000:3128]
+plot(range(0,len(Y)), Y)
+
+# fig.update_xaxes(title_text="Number of items", row=5, col=1, title_font = {"size": 16})
+# fig.update_yaxes(title_text="Loss", row=1, col=1, title_font = {"size": 16})
+# fig.update_yaxes(title_text="Accuracy", row=2, col=1, title_font = {"size": 16})
+# fig.update_yaxes(title_text="No. trainable parameters", row=3, col=1, title_font = {"size": 16})
+# fig.update_yaxes(title_text="No. trees", row=4, col=1, title_font = {"size": 16})
+# fig.update_yaxes(title_text="Cumulative time [s]", row=5, col=1, title_font = {"size": 16})
+
+# fig.update_layout(
+#     template="simple_white",
+#     legend=dict(orientation="h",yanchor="bottom",y=-0.2,xanchor="left",x=0.15),
+#     margin={'l': 5, 'r': 20, 't': 20, 'b': 5},
+#     height=900, width=1100
+# )
+
