@@ -1,6 +1,7 @@
 import numpy as np
 import random
-import copy
+import pickle
+import sys
 from numpy.core.fromnumeric import argsort
 from tqdm import tqdm
 
@@ -120,6 +121,22 @@ class PrimeModel(OnlineLearner):
 
         self.cur_batch_x = [] 
         self.cur_batch_y = [] 
+
+    def num_bytes(self):
+        # This is a little hacky. Pickle gives us an easy and accurate way to compute the size of this object, including 
+        # sklearn estimators etc.
+        # However, since I am lazy I did not want to implement pickling support in C++ and thus I set self.model
+        if self.backend == "c++":
+            return self.model.num_bytes() + sys.getsizeof(self.cur_batch_x) + sys.getsizeof(self.cur_batch_y)
+            # model = self.model
+            # self.model = None
+            # p = pickle.dumps(self)
+            # size = sys.getsizeof(p)
+            # self.model = model
+            # return size + self.model.num_bytes()
+        else:
+            p = pickle.dumps(self.model)
+            return sys.getsizeof(p) + sys.getsizeof(self.cur_batch_x) + sys.getsizeof(self.cur_batch_y)
 
     def num_trees(self):
         return self.model.num_trees()

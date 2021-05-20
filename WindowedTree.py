@@ -1,6 +1,7 @@
 import numpy as np
 import random
-import copy
+import pickle
+import sys
 from numpy.core.fromnumeric import argsort
 from tqdm import tqdm
 
@@ -88,6 +89,10 @@ class WindowedTree(OnlineLearner):
             return 0
         else:
             return 1
+
+    def num_bytes(self):
+        p = pickle.dumps(self.model)
+        return sys.getsizeof(p) + sys.getsizeof(self.cur_batch_x) + sys.getsizeof(self.cur_batch_y)
 
     def num_nodes(self):
         if self.model is None:

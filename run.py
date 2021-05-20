@@ -252,32 +252,32 @@ def main(args):
         np.random.seed(experiment_cfg["seed"])
         print("Generating random hyperparameter configurations")
 
-        models.extend(
-            generate_configs(
-                {
-                    "model":MoaModel,
-                    "model_params": {
-                        "moa_model":"moa.classifiers.meta.StreamingRandomPatches",
-                        "moa_params": {
-                            "l" : {
-                                MoaModel.MOA_EMPTY_PLACEHOLDER: Variation(["moa.classifiers.trees.HoeffdingTree"]),
-                                "g":Variation([50]),
-                                "c":Variation([0.1]),
-                                "l":Variation(["NB"])
-                            },
-                            "x" : Variation(["(ADWINChangeDetector -a 1.0E-1)"]), #1.0E-5
-                            "s" : Variation([32]),
-                            "o" : "(Percentage (M * (m / 100)))"
-                        },
-                        "nominal_attributes":nominal_attributes,
-                        "moa_jar":os.path.join("moa-release-2020.12.0", "lib", "moa.jar"),
-                        **online_learner_cfg
-                    },
-                    **experiment_cfg
-                }, 
-                n_configs=args.n_configs
-            )
-        )
+        # models.extend(
+        #     generate_configs(
+        #         {
+        #             "model":MoaModel,
+        #             "model_params": {
+        #                 "moa_model":"moa.classifiers.meta.StreamingRandomPatches",
+        #                 "moa_params": {
+        #                     "l" : {
+        #                         MoaModel.MOA_EMPTY_PLACEHOLDER: Variation(["moa.classifiers.trees.HoeffdingTree"]),
+        #                         "g":Variation([50]),
+        #                         "c":Variation([0.1]),
+        #                         "l":Variation(["NB"])
+        #                     },
+        #                     "x" : Variation(["(ADWINChangeDetector -a 1.0E-1)"]), #1.0E-5
+        #                     "s" : Variation([32]),
+        #                     "o" : "(Percentage (M * (m / 100)))"
+        #                 },
+        #                 "nominal_attributes":nominal_attributes,
+        #                 "moa_jar":os.path.join("moa-release-2020.12.0", "lib", "moa.jar"),
+        #                 **online_learner_cfg
+        #             },
+        #             **experiment_cfg
+        #         }, 
+        #         n_configs=args.n_configs
+        #     )
+        # )
 
         # models.extend(
         #     generate_configs(
@@ -286,18 +286,18 @@ def main(args):
         #             "model_params": {
         #                 "loss":Variation(["mse"]),
         #                 "ensemble_regularizer":"hard-L0",
-        #                 "l_ensemble_reg":Variation([16]),
+        #                 "l_ensemble_reg":Variation([32]),
         #                 "tree_regularizer":None,
         #                 "l_tree_reg":0,
         #                 "normalize_weights":True,
         #                 "update_leaves":Variation([True]),
         #                 "seed":experiment_cfg["seed"],
-        #                 "batch_size":Variation([512]),
+        #                 "batch_size":Variation([256]),
         #                 "step_size":Variation([1e-1]),
         #                 "additional_tree_options" : {
         #                     "tree_init_mode" : Variation(["random"]),
         #                     "is_nominal" : is_nominal,
-        #                     "max_depth":Variation([1]),
+        #                     "max_depth":Variation([10]),
         #                 },
         #                 "backend" : "c++",
         #                 **online_learner_cfg
@@ -307,6 +307,42 @@ def main(args):
         #         n_configs=args.n_configs
         #     )
         # )
+
+        # models.extend(
+        #     generate_configs(
+        #         {
+        #             "model":JaxModel,
+        #             "model_params": {
+        #                 "loss":Variation(["mse"]),
+        #                 "step_size":Variation([1e-2]),
+        #                 "max_depth":Variation([5]),
+        #                 "n_trees":Variation([4]),
+        #                 "batch_size":Variation([512]),
+        #                 **online_learner_cfg
+        #             },
+        #             **experiment_cfg
+        #         },
+        #         n_configs=args.n_configs
+        #     )
+        # )
+
+        models.extend(
+            generate_configs(
+                {
+                    "model":WindowedTree,
+                    "model_params": {
+                        "max_depth":Variation([10]),
+                        "seed":experiment_cfg["seed"],
+                        "batch_size":Variation([1024]),
+                        "splitter" : Variation(["best"]),
+                        "criterion" : Variation(["gini"]), 
+                        **online_learner_cfg
+                    },
+                    **experiment_cfg
+                }, 
+                n_configs=args.n_configs
+            )
+        )
 
         # models.extend(
         #     generate_configs(
@@ -474,6 +510,27 @@ def main(args):
         #                     "g":Variation([50,100,250]),
         #                     "c":Variation([0.1,0.01,0.001]),
         #                     "l":Variation(["MC", "NB"])
+        #                 },
+        #                 "nominal_attributes":nominal_attributes,
+        #                 "moa_jar":os.path.join("moa-release-2020.12.0", "lib", "moa.jar"),
+        #                 **online_learner_cfg
+        #             },
+        #             **experiment_cfg
+        #         }, 
+        #         n_configs=args.n_configs
+        #     )
+        # )
+
+        # models.extend(
+        #     generate_configs(
+        #         {
+        #             "model":MoaModel,
+        #             "model_params": {
+        #                 "moa_model":"moa.classifiers.trees.HoeffdingTree",
+        #                 "moa_params": {
+        #                     "g":Variation([50]),
+        #                     "c":Variation([0.01]),
+        #                     "l":Variation(["NB"])
         #                 },
         #                 "nominal_attributes":nominal_attributes,
         #                 "moa_jar":os.path.join("moa-release-2020.12.0", "lib", "moa.jar"),

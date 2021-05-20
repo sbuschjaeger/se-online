@@ -1,5 +1,6 @@
 import numpy as np
-import random
+import pickle
+import sys
 from tqdm import tqdm
 
 from absl import logging
@@ -182,8 +183,13 @@ class JaxModel(OnlineLearner):
             return np.array(predict_proba(X, self.W, self.B, self.leaf_preds, self.beta))
 
     def num_bytes(self):
-        # 4 byte?
-        return self.num_trees() * (self.W[0].shape[0] * self.W[0].shape[1] + self.B[0].shape[0] + self.leaf_preds[0].shape[0] * self.leaf_preds[0].shape[1]) * 4
+        # TODO THIS MIGHT BE A LITTLE BIASED SINCE WE COUNT SOME OVERHEAD, E.G self.beta / self.beta_max etc?
+        p = pickle.dumps(self)
+        return sys.getsizeof(p)
+
+    # def num_bytes(self):
+    #     # 4 byte?
+    #     return self.num_trees() * (self.W[0].shape[0] * self.W[0].shape[1] + self.B[0].shape[0] + self.leaf_preds[0].shape[0] * self.leaf_preds[0].shape[1]) * 4
 
     def num_trees(self):
         return self.n_trees
