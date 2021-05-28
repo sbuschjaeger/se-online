@@ -183,9 +183,15 @@ class JaxModel(OnlineLearner):
             return np.array(predict_proba(X, self.W, self.B, self.leaf_preds, self.beta))
 
     def num_bytes(self):
-        # TODO THIS MIGHT BE A LITTLE BIASED SINCE WE COUNT SOME OVERHEAD, E.G self.beta / self.beta_max etc?
-        p = pickle.dumps(self)
-        return sys.getsizeof(p)
+        size = super().num_bytes()
+        size += sys.getsizeof(self.cur_batch_x) + sys.getsizeof(self.cur_batch_y) + sys.getsizeof(self.max_depth) + sys.getsizeof(self.batch_size) + sys.getsizeof(self.beta_max) + sys.getsizeof(self.temp_scaling) + sys.getsizeof(self.l_reg) + sys.getsizeof(self.beta) + sys.getsizeof(self.n_trees) + sys.getsizeof(self.step_size) + sys.getsizeof(self.loss)
+        
+        # TODO Check if getsizeof returns the correct number here?
+        return size + sys.getsizeof(self.W) + sys.getsizeof(self.leaf_preds)
+
+        #return self.num_trees() * (self.W[0].shape[0] * self.W[0].shape[1] + self.B[0].shape[0] + self.leaf_preds[0].shape[0] * self.leaf_preds[0].shape[1]) * 4
+        # p = pickle.dumps(self)
+        # return sys.getsizeof(p)
 
     # def num_bytes(self):
     #     # 4 byte?

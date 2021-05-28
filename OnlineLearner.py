@@ -6,6 +6,7 @@ import time
 import gzip
 import pickle
 import river
+import sys
 
 from functools import partial
 
@@ -50,9 +51,19 @@ class OnlineLearner(ABC):
     def num_nodes(self):
         pass
 
-    @abstractmethod
     def num_bytes(self):
-        pass
+        # This call does not include any metrics or statistics computed e.g. during training, but is only the size of this object  itself. 
+        size = sys.getsizeof(self.eval_loss) + sys.getsizeof(self.verbose) + sys.getsizeof(self.shuffle) + sys.getsizeof(self.out_path) + sys.getsizeof(self.seed)
+        if hasattr(self, "classes_"):
+            size += sys.getsizeof(self.classes_)
+        
+        if hasattr(self, "n_classes_"):
+            size += sys.getsizeof(self.n_classes_)
+        
+        if hasattr(self, "n_outputs_"):
+            size += sys.getsizeof(self.n_outputs_)
+        
+        return size
 
     @abstractmethod
     def predict_proba(self, X):
@@ -78,9 +89,6 @@ class OnlineLearner(ABC):
         self.n_classes_ = len(self.classes_)
         self.n_outputs_ = self.n_classes_
         
-        self.X_ = X
-        self.y_ = y
-
         river_metrics = {
             "accuracy":river.metrics.Accuracy(),
             "kappa":river.metrics.CohenKappa(),

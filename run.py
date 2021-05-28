@@ -279,34 +279,34 @@ def main(args):
         #     )
         # )
 
-        # models.extend(
-        #     generate_configs(
-        #         {
-        #             "model":PrimeModel,
-        #             "model_params": {
-        #                 "loss":Variation(["mse"]),
-        #                 "ensemble_regularizer":"hard-L0",
-        #                 "l_ensemble_reg":Variation([32]),
-        #                 "tree_regularizer":None,
-        #                 "l_tree_reg":0,
-        #                 "normalize_weights":True,
-        #                 "update_leaves":Variation([True]),
-        #                 "seed":experiment_cfg["seed"],
-        #                 "batch_size":Variation([256]),
-        #                 "step_size":Variation([1e-1]),
-        #                 "additional_tree_options" : {
-        #                     "tree_init_mode" : Variation(["random"]),
-        #                     "is_nominal" : is_nominal,
-        #                     "max_depth":Variation([10]),
-        #                 },
-        #                 "backend" : "c++",
-        #                 **online_learner_cfg
-        #             },
-        #             **experiment_cfg
-        #         }, 
-        #         n_configs=args.n_configs
-        #     )
-        # )
+        models.extend(
+            generate_configs(
+                {
+                    "model":PrimeModel,
+                    "model_params": {
+                        "loss":Variation(["mse"]),
+                        "ensemble_regularizer":"hard-L0",
+                        "l_ensemble_reg":Variation([4]),
+                        "tree_regularizer":None,
+                        "l_tree_reg":0,
+                        "normalize_weights":True,
+                        "update_leaves":Variation([True]),
+                        "seed":experiment_cfg["seed"],
+                        "batch_size":Variation([256]),
+                        "step_size":Variation([1e-1]),
+                        "additional_tree_options" : {
+                            # "tree_init_mode" : Variation(["random"]),
+                            # "is_nominal" : is_nominal,
+                            "max_depth":Variation([10]),
+                        },
+                        "backend" : "python",
+                        **online_learner_cfg
+                    },
+                    **experiment_cfg
+                }, 
+                n_configs=args.n_configs
+            )
+        )
 
         # models.extend(
         #     generate_configs(
@@ -326,23 +326,23 @@ def main(args):
         #     )
         # )
 
-        models.extend(
-            generate_configs(
-                {
-                    "model":WindowedTree,
-                    "model_params": {
-                        "max_depth":Variation([10]),
-                        "seed":experiment_cfg["seed"],
-                        "batch_size":Variation([1024]),
-                        "splitter" : Variation(["best"]),
-                        "criterion" : Variation(["gini"]), 
-                        **online_learner_cfg
-                    },
-                    **experiment_cfg
-                }, 
-                n_configs=args.n_configs
-            )
-        )
+        # models.extend(
+        #     generate_configs(
+        #         {
+        #             "model":WindowedTree,
+        #             "model_params": {
+        #                 "max_depth":Variation([10]),
+        #                 "seed":experiment_cfg["seed"],
+        #                 "batch_size":Variation([1024]),
+        #                 "splitter" : Variation(["best"]),
+        #                 "criterion" : Variation(["gini"]), 
+        #                 **online_learner_cfg
+        #             },
+        #             **experiment_cfg
+        #         }, 
+        #         n_configs=args.n_configs
+        #     )
+        # )
 
         # models.extend(
         #     generate_configs(

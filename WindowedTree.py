@@ -91,8 +91,13 @@ class WindowedTree(OnlineLearner):
             return 1
 
     def num_bytes(self):
+        size = super().num_bytes()
+        size += sys.getsizeof(self.cur_batch_x) + sys.getsizeof(self.cur_batch_y) + sys.getsizeof(self.max_depth) + sys.getsizeof(self.batch_size) + sys.getsizeof(self.criterion) + sys.getsizeof(self.splitter) + sys.getsizeof(self.dt_seed)
+        
+        # The simplest way to get the size of an sklearn object is to pickel it. This includes a lot of overhead now due to python, but since the "backend" for computing the model is python in this case I guess this is a fair comparison. 
         p = pickle.dumps(self.model)
-        return sys.getsizeof(p) + sys.getsizeof(self.cur_batch_x) + sys.getsizeof(self.cur_batch_y)
+        size += sys.getsizeof(p) 
+        return size
 
     def num_nodes(self):
         if self.model is None:
@@ -102,12 +107,17 @@ class WindowedTree(OnlineLearner):
 
     def predict_proba(self, X):
         if self.model is None:
-            return 1.0 / self.n_classes_ * np.ones((X.shape[0], self.n_classes_))
+            if len(X.shape) < 0:
+                return 1.0 / self.n_classes_ * np.ones((1, self.n_classes_))
+            else:
+                return 1.0 / self.n_classes_ * np.ones((X.shape[0], self.n_classes_))
         else:
-            proba = np.zeros(shape=(X.shape[0], self.n_classes_), dtype=np.float32)
             if len(X.shape) < 2:
-                # add the implicit batch dimension via X[np.newaxis,:]
+                proba = np.zeros(shape=(1, self.n_classes_), dtype=np.float32)
+                # add the implicit batch dimension
                 X = X[np.newaxis,:]
+            else:
+                proba = np.zeros(shape=(X.shape[0], self.n_classes_), dtype=np.float32)
             
             proba[:, self.model.classes_.astype(int)] += self.model.predict_proba(X)
 
@@ -123,15 +133,10 @@ class WindowedTree(OnlineLearner):
         self.cur_batch_x.append(data)
         self.cur_batch_y.append(target)
         
-        batch_data = np.array(self.cur_batch_x)
-        batch_target = np.array(self.cur_batch_y)
+        if self.model is None or self.predict_proba(data).argmax(axis=1)[0] != target:
+            batch_data = np.array(self.cur_batch_x)
+            batch_target = np.array(self.cur_batch_y)
 
-        # output = np.array(self.predict_proba(data[np.newaxis,:]))[0]
-        
-        self.model = DecisionTreeClassifier(max_depth = self.max_depth, random_state=self.dt_seed, splitter=self.splitter, criterion=self.criterion)
-        self.dt_seed += 1
-        self.model.fit(batch_data, batch_target)
-
-        # accuracy = (output.argmax() == target) * 100.0
-
-        # return {"accuracy": accuracy, "num_trees": self.num_trees(), "num_parameters" : self.num_parameters()}, output
+            self.model = DecisionTreeClassifier(max_depth = self.max_depth, random_state=self.dt_seed, splitter=self.splitter, criterion=self.criterion)
+            self.dt_seed += 1
+            self.model.fit(batch_data, batch_target)

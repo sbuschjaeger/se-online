@@ -115,7 +115,6 @@ class PrimeModel(OnlineLearner):
         self.batch_size = batch_size
         self.verbose = verbose
         self.out_path = out_path
-        self.seed = seed
         self.additional_tree_options = additional_tree_options
         self.model = None 
 
@@ -123,20 +122,10 @@ class PrimeModel(OnlineLearner):
         self.cur_batch_y = [] 
 
     def num_bytes(self):
-        # This is a little hacky. Pickle gives us an easy and accurate way to compute the size of this object, including 
-        # sklearn estimators etc.
-        # However, since I am lazy I did not want to implement pickling support in C++ and thus I set self.model
-        if self.backend == "c++":
-            return self.model.num_bytes() + sys.getsizeof(self.cur_batch_x) + sys.getsizeof(self.cur_batch_y)
-            # model = self.model
-            # self.model = None
-            # p = pickle.dumps(self)
-            # size = sys.getsizeof(p)
-            # self.model = model
-            # return size + self.model.num_bytes()
-        else:
-            p = pickle.dumps(self.model)
-            return sys.getsizeof(p) + sys.getsizeof(self.cur_batch_x) + sys.getsizeof(self.cur_batch_y)
+        size = super().num_bytes()
+        size += sys.getsizeof(self.backend) + sys.getsizeof(self.loss) + sys.getsizeof(self.step_size) + sys.getsizeof(self.ensemble_regularizer) + sys.getsizeof(self.l_ensemble_reg) + sys.getsizeof(self.tree_regularizer) + sys.getsizeof(self.l_tree_reg) + sys.getsizeof(self.normalize_weights) + sys.getsizeof(self.update_leaves) + sys.getsizeof(self.batch_size) + sys.getsizeof(self.verbose) + sys.getsizeof(self.out_path) + sys.getsizeof(self.seed) + sys.getsizeof(self.additional_tree_options) + sys.getsizeof(self.model) + sys.getsizeof(self.cur_batch_x) + sys.getsizeof(self.cur_batch_y) + sys.getsizeof(self.is_nominal) + sys.getsizeof(self.tree_init_mode)
+
+        return self.model.num_bytes() + size
 
     def num_trees(self):
         return self.model.num_trees()
@@ -158,10 +147,6 @@ class PrimeModel(OnlineLearner):
         batch_target = np.array(self.cur_batch_y)
 
         self.model.next(batch_data, batch_target)
-        # output = np.array(self.model.predict_proba(data[np.newaxis,:]))[0]
-        # accuracy = (output.argmax() == target) * 100.0
-
-        # return {"accuracy": accuracy, "num_trees": self.num_trees(), "num_nodes" : self.num_nodes()}, output
 
     def predict_proba(self, X):
         return self.model.predict_proba(X)
