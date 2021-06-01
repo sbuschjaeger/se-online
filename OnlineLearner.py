@@ -102,12 +102,23 @@ class OnlineLearner(ABC):
         }
 
         n = 0
+        old_size = None
+        first_percent = int(X.shape[0] * 0.01)
+
         with tqdm(total=X.shape[0], ncols=220, disable = not self.verbose) as pbar:
-            for x,y in zip(X,y):
+            for i,(x,y) in enumerate(zip(X,y)):
                 output = self.predict_proba(x)
                 n_nodes = self.num_nodes()
                 n_trees = self.num_trees()
-                n_bytes = self.num_bytes()
+                
+                # Asking for the size of an objectiv is somewhat expensive. For MOA (=Java) we need to iterate over the entire
+                # object hierarchy and for Jax / SKLearn we need to (un)pickle everything. To speed things up a bit we compute
+                # the size of the model for every percent of data consumed. Since there is probably the most variability in the 
+                # size of the objects we also evaluate it for each item in the first percent of the data.
+                if (i < first_percent) or i % first_percent == 0:
+                    old_size = self.num_bytes()
+                
+                n_bytes = old_size
 
                 # Update Model                    
                 start_time = time.time()

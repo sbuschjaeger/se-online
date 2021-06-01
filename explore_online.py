@@ -90,12 +90,19 @@ def nice_name(row):
 
 base_path = "/rdata/s01b_ls8_000/buschjae/"
 
+# datasets = [
+#     "elec", "gmsc", "gas-sensor", "nomao","weather", "spam",
+#     "airlines", "covtype", "agrawal_a", "agrawal_g", "led_a", "led_g", "rbf_f", "rbf_m", 
+# ]
+
 datasets = [
-    "elec", "gmsc", "gas-sensor", "nomao","weather", "spam",
-    "airlines", "covtype", "agrawal_a", "agrawal_g", "led_a", "led_g", "rbf_f", "rbf_m", 
+    "covtype"
 ]
 
 for d in datasets:
+    # Skip experiments which have not yet been performed
+    if not os.path.isdir(base_path):
+        continue
     dataset_path = os.path.join(base_path, d, "results")
     all_subdirs = [os.path.join(dataset_path,di) for di in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, di))]
     latest_folder = max(all_subdirs, key=os.path.getmtime)
@@ -115,9 +122,10 @@ for d in datasets:
     mean_kappaT = []
     mean_kappaC = []
     mean_loss = []
-    mean_params = []
+    mean_nodes = []
     mean_time = []
     mean_trees = []
+    mean_memory = []
 
     for index, row in dff.iterrows(): 
         try:
@@ -136,14 +144,16 @@ for d in datasets:
                 "kappaM":metrics["kappaM"],
                 "kappaT":metrics["kappaT"],
                 "kappaC":metrics["kappaC"],
-                #"num_parameters":metrics["num_parameters"],
-                #"num_trees":metrics["num_trees"],
+                "num_nodes":metrics["num_nodes"],
+                "num_trees":metrics["num_trees"],
+                "num_bytes":metrics["num_bytes"],
                 "loss":metrics["loss"],
                 "item_cnt":metrics["item_cnt"],
                 "time":metrics["time_sum"],
                 "loss_average":metrics["loss_sum"] / metrics["item_cnt"],
-                #"num_parameters_average":metrics["num_parameters_sum"] / metrics["item_cnt"],
-                #"num_trees_average":metrics["num_trees_sum"] / metrics["item_cnt"],
+                "num_nodes_average":metrics["num_nodes_sum"] / metrics["item_cnt"],
+                "num_trees_average":metrics["num_trees_sum"] / metrics["item_cnt"],
+                "num_bytes_average":metrics["num_bytes_sum"] / metrics["item_cnt"],
                 "accuracy_average":metrics["accuracy_sum"] / metrics["item_cnt"],
                 "kappa_average":metrics["kappa_sum"] / metrics["item_cnt"],
                 "kappaM_average":metrics["kappaM_sum"] / metrics["item_cnt"],
@@ -159,13 +169,16 @@ for d in datasets:
             mean_kappaT.append(tmp["kappaT_average"][-1])
             mean_kappaC.append(tmp["kappaC_average"][-1])
             mean_accuracy.append(tmp["accuracy_average"][-1])
+            mean_nodes.append(tmp["num_nodes_average"][-1])
+            mean_trees.append(tmp["num_trees_average"][-1])
+            mean_memory.append(tmp["num_bytes_average"][-1])
             #mean_params.append(tmp["num_parameters_average"][-1])
-            #mean_trees.append(tmp["num_trees_average"][-1])
         except Exception as e:
             print(e)
             #traindfs.append(pd.DataFrame())
             mean_accuracy.append(0)
-            mean_params.append(0)
+            mean_nodes.append(0)
+            mean_memory.append(0)
             mean_trees.append(0)
             mean_kappa.append(0)
             mean_kappaM.append(0)
@@ -178,11 +191,14 @@ for d in datasets:
     dff["mean_kappaM"] = mean_kappaM
     dff["mean_kappaT"] = mean_kappaT
     dff["mean_kappaC"] = mean_kappaC
-    # df["mean_params"] = mean_params
-    # df["mean_trees"] = mean_trees
+    dff["mean_nodes"] = mean_nodes
+    dff["mean_trees"] = mean_trees
+    dff["mean_memory"] = mean_memory 
+    # Bytes to MB
+    dff["mean_memory"] /= (1024.0 * 1024.0)
     # df["train_details"] = traindfs
 
-    tabledf = dff[["dataset","nice_name", "mean_accuracy", "mean_kappa", "mean_kappaM", "mean_kappaT","mean_kappaC","scores.mean_fit_time"]]
+    tabledf = dff[["dataset","nice_name", "mean_accuracy", "mean_kappa", "mean_kappaM", "mean_kappaT","mean_kappaC","scores.mean_fit_time","mean_nodes","mean_memory"]]
     tabledf = tabledf.sort_values(by=['mean_accuracy'], ascending = False)
     tabledf = tabledf.groupby('nice_name').head(1)#.reset_index(level=1, drop=True)
     #print("Processed {} experiments".format(len(tabledf)))

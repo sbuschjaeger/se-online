@@ -92,7 +92,7 @@ class MoaModel(OnlineLearner):
 
         if not jpype.isJVMStarted():
             sizeof_path = os.path.join( os.path.split(moa_jar)[0], "sizeofag-1.0.4.jar")
-            jpype.startJVM("-Xms1G", "-Xmx4G", "-javaagent:{}".format(sizeof_path), classpath = moa_jar)
+            jpype.startJVM("-Xms1G", "-Xmx8G", "-javaagent:{}".format(sizeof_path), classpath = moa_jar)
 
         # try:
         #     # In multi-threaded environment there might be a JVM already running which can lead to errors here. If thats the case we just ignore the exception
@@ -104,7 +104,9 @@ class MoaModel(OnlineLearner):
         from java.io import PrintStream, File
         # TODO make this platform independent. For Windows use NUL instead of /dev/null. What about MAC?
         # https://stackoverflow.com/questions/56760450/redirect-jar-output-when-called-via-jpype-in-python
+        System.err.close()
         System.setErr(PrintStream(File("/dev/null")))
+        System.setOut(PrintStream(File("/dev/null")))
 
         #self.model = moa_model
         self.model = create_moa_model(moa_model, moa_params)

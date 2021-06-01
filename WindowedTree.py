@@ -15,8 +15,7 @@ from scipy.special import softmax
 
 from OnlineLearner import OnlineLearner
 
-from prime.Prime import Prime
-from prime.CPrimeBindings import CPrimeBindings
+from prime.CPrimeBindings import CTreeBindings
 
 class WindowedTree(OnlineLearner):
     """ 
@@ -60,26 +59,24 @@ class WindowedTree(OnlineLearner):
     """
 
     def __init__(self,
-                max_depth,
                 batch_size,
-                splitter = "best",
-                criterion = "gini",
+                additional_tree_options,
                 verbose = False,
                 out_path = None,
                 seed = None,
                 eval_loss = "cross-entropy",
-                shuffle = False
+                shuffle = False,
+                backend = "c++"
         ):
 
         super().__init__(eval_loss, seed, verbose, shuffle, out_path)
 
-        self.max_depth = max_depth
         self.batch_size = batch_size
-        self.criterion = criterion
-        self.splitter = splitter
 
+        self.additional_tree_options = additional_tree_options
         self.model = None
         self.dt_seed = seed
+        self.backend = backend
 
         self.cur_batch_x = [] 
         self.cur_batch_y = [] 
@@ -92,18 +89,26 @@ class WindowedTree(OnlineLearner):
 
     def num_bytes(self):
         size = super().num_bytes()
-        size += sys.getsizeof(self.cur_batch_x) + sys.getsizeof(self.cur_batch_y) + sys.getsizeof(self.max_depth) + sys.getsizeof(self.batch_size) + sys.getsizeof(self.criterion) + sys.getsizeof(self.splitter) + sys.getsizeof(self.dt_seed)
+        size += sys.getsizeof(self.cur_batch_x) + sys.getsizeof(self.cur_batch_y) + sys.getsizeof(self.additional_tree_options) + sys.getsizeof(self.batch_size) + sys.getsizeof(self.dt_seed) + sys.getsizeof(self.backend)
         
-        # The simplest way to get the size of an sklearn object is to pickel it. This includes a lot of overhead now due to python, but since the "backend" for computing the model is python in this case I guess this is a fair comparison. 
-        p = pickle.dumps(self.model)
-        size += sys.getsizeof(p) 
+        if self.model is not None:
+            if self.backend == "python":
+                # The simplest way to get the size of an sklearn object is to pickel it. This includes a lot of overhead now due to python, but since the "backend" for computing the model is python in this case I guess this is a fair comparison. 
+                p = pickle.dumps(self.model)
+                size += sys.getsizeof(p) 
+            else:
+                size += self.model.num_bytes()
+
         return size
 
     def num_nodes(self):
         if self.model is None:
             return 0
         else:
-            return self.model.tree_.node_count
+            if self.backend == "python":
+                return self.model.tree_.node_count
+            else:
+                return self.model.num_nodes()
 
     def predict_proba(self, X):
         if self.model is None:
@@ -119,7 +124,12 @@ class WindowedTree(OnlineLearner):
             else:
                 proba = np.zeros(shape=(X.shape[0], self.n_classes_), dtype=np.float32)
             
-            proba[:, self.model.classes_.astype(int)] += self.model.predict_proba(X)
+            if self.backend == "python":
+                classes = self.model.classes_.astype(int)
+            else:
+                classes = np.array([i for i in range(self.n_classes_)])
+
+            proba[:, classes] += self.model.predict_proba(X)
 
             return proba
 
@@ -137,6 +147,12 @@ class WindowedTree(OnlineLearner):
             batch_data = np.array(self.cur_batch_x)
             batch_target = np.array(self.cur_batch_y)
 
-            self.model = DecisionTreeClassifier(max_depth = self.max_depth, random_state=self.dt_seed, splitter=self.splitter, criterion=self.criterion)
+            if self.backend == "python":
+                self.model = DecisionTreeClassifier(random_state=self.dt_seed, **self.additional_tree_options)
+                self.model.fit(batch_data, batch_target)
+            else:
+                max_depth = int(self.additional_tree_options.get("max_depth", 1))
+                tree_init = self.additional_tree_options.get("tree_init_mode", "train")
+                self.model = CTreeBindings(max_depth = max_depth, n_classes = self.n_classes_, seed = self.dt_seed, X = batch_data, Y = batch_target, tree_init_mode = tree_init, tree_update_mode = "none")
+
             self.dt_seed += 1
-            self.model.fit(batch_data, batch_target)
