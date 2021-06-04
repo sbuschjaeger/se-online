@@ -18,17 +18,17 @@ def read_jsonl(path):
 
 name_mapping = {
     "SRP":"SRP",
-    "ExtremelyFastDecisionTreeClassifier":"ET",
+    "ExtremelyFastDecisionTreeClassifier":"HTT",
     "HoeffdingTreeClassifier":"HT",
     "AdaptiveRandomForestClassifier":"ARF",
     "AdaBoostClassifier":"AB",
     "BaggingClassifier":"Bag",
-    "PrimeModel":"Prime",
+    "PrimeModel":"SE",
     "JaxModel":"SDT",
-    "WindowedTree":"WT",
+    "WindowedTree":"SE",
     "moa.classifiers.meta.AdaptiveRandomForest":"ARF",
     "moa.classifiers.trees.HoeffdingTree":"HT",
-    "moa.classifiers.trees.EFDT":"ET",
+    "moa.classifiers.trees.EFDT":"HTT",
     "moa.classifiers.meta.StreamingRandomPatches":"SRP",
     "moa.classifiers.meta.OzaBag":"Bag",
     "moa.classifiers.bayes.NaiveBayes":"NB",
@@ -40,16 +40,13 @@ def nice_name(row):
         model_name = name_mapping[row["model_params.river_model"]]
         if row["model_params.river_model"] in ["SRP","BaggingClassifier", "AdaBoostClassifier"]:
             model_name += " + " + name_mapping[row["model_params.river_params.model"]]
-    elif (row["model"] == "PrimeModel"):
-        tree_init_mode = "None"
-        if row.get("model_params.additional_tree_options.tree_init_mode", None) is not None:
-            tree_init_mode = row.get("model_params.additional_tree_options.tree_init_mode")
-        model_name = "{} {}".format(name_mapping[row["model"]], tree_init_mode)
-    elif (row["model"] == "WindowedTree"):
-        tree_init_mode = "None"
-        if row.get("model_params.splitter", None) is not None:
-            tree_init_mode = row.get("model_params.splitter")
-        model_name = "{} {}".format(name_mapping[row["model"]], tree_init_mode)
+    # elif (row["model"] == "PrimeModel"):
+    #     model_name = "{} b = {} l = {}".format(name_mapping[row["model"]], row.get("model_params.burnin_steps", None), row.get("model_params.loss", None)) # row.get("model_params.additional_tree_options.max_features", None), row.get("model_params.step_size", None)
+    # elif (row["model"] == "WindowedTree"):
+    #     tree_init_mode = "None"
+    #     if row.get("model_params.additional_tree_options.tree_init_mode", None) is not None:
+    #         tree_init_mode = row.get("model_params.additional_tree_options.tree_init_mode")
+    #     model_name = "{} {}".format(name_mapping[row["model"]], tree_init_mode)
     # elif (row["model"] == "PrimeModel"):
     #     tree_init_mode = "None"
         
@@ -96,23 +93,26 @@ base_path = "/rdata/s01b_ls8_000/buschjae/"
 # ]
 
 datasets = [
-    "covtype"
+    "elec", "weather", "nomao", "gas-sensor", "covtype", "led_a", "rbf_f", "agrawal_a"
 ]
 
+max_kb = [None, 10 * 1024, 1024, 128]
+print_individual = False
+
+combined = []
 for d in datasets:
     # Skip experiments which have not yet been performed
-    if not os.path.isdir(base_path):
-        continue
     dataset_path = os.path.join(base_path, d, "results")
+    if not os.path.isdir(dataset_path):
+        continue
     all_subdirs = [os.path.join(dataset_path,di) for di in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, di))]
     latest_folder = max(all_subdirs, key=os.path.getmtime)
 
     print("Reading {}".format(os.path.join(latest_folder, "results.jsonl")))
     dff = read_jsonl(os.path.join(latest_folder, "results.jsonl"))
     dff["nice_name"] = dff.apply(nice_name, axis=1)
+    dff["dataset"] = d
     dff = dff.round(decimals = 3)
-    combined = []
-    print_individual = False
 
     print("Found {} experiments for {} dataset".format(len(dff), d))
     traindfs = []
@@ -194,22 +194,113 @@ for d in datasets:
     dff["mean_nodes"] = mean_nodes
     dff["mean_trees"] = mean_trees
     dff["mean_memory"] = mean_memory 
-    # Bytes to MB
-    dff["mean_memory"] /= (1024.0 * 1024.0)
+    # Bytes to KB
+    dff["mean_memory"] /= (1024.0)
     # df["train_details"] = traindfs
 
     tabledf = dff[["dataset","nice_name", "mean_accuracy", "mean_kappa", "mean_kappaM", "mean_kappaT","mean_kappaC","scores.mean_fit_time","mean_nodes","mean_memory"]]
-    tabledf = tabledf.sort_values(by=['mean_accuracy'], ascending = False)
-    tabledf = tabledf.groupby('nice_name').head(1)#.reset_index(level=1, drop=True)
-    #print("Processed {} experiments".format(len(tabledf)))
     combined.append(tabledf)
+    
     if print_individual:
-        display(HTML(tabledf.to_html()))
-        print("")
-    break
+        for kb in max_kb:
+            if kb is not None:
+                filteredDF = tabledf.drop(tabledf[tabledf.mean_memory > kb].index)
+            else:
+                filteredDF = tabledf
+            filteredDF = filteredDF.sort_values(by=['mean_accuracy'], ascending = False)
+            filteredDF = filteredDF.groupby('nice_name').head(1)#.reset_index(level=1, drop=True)
+            print("{} experiments on {} after filtering for {} KB".format(len(filteredDF), d, kb))
+            display(HTML(filteredDF.to_html()))
+            print("")
+
+def highlight(s):
+    '''
+    Nice styling of inline tables. This highlights the best accuracy.
+    This helps a lot when reviewing the results. Probably has only effect if Jupyter / VSCode is used.
+    '''
+    accs = []
+    for i in range(0, len(s)):
+        accs.append(s[i])
+
+    max_acc = np.nanmax(accs)
+
+    style = []
+    for acc in accs:
+        if acc == max_acc:
+            style.append('background-color: blue; text-align: left')
+        else:
+            style.append('')
+        
+    return style
 
 df = pd.concat(combined)
-display(HTML(df.to_html()))
+for kb in max_kb:
+    if kb is not None:
+        filteredDF = df.copy()
+        filteredDF.loc[filteredDF.mean_memory > kb, 'mean_accuracy'] = 0
+        #filteredDF = df.drop(df[df.mean_memory > kb].index)
+    else:
+        filteredDF = df
+    
+    filteredDF = filteredDF.sort_values(by=['mean_accuracy'], ascending = False)
+    filteredDF = filteredDF.groupby(["nice_name", "dataset"]).head(1)
+
+    print("Filtered for {} KB".format(kb))
+    #display(HTML(filteredDF.to_html()))
+    pivotDF = pd.pivot_table(filteredDF, values = "mean_accuracy", index = ["dataset"], columns = ["nice_name"])
+    display( pivotDF.style.apply(highlight,axis=1) )
+    #display(HTML(pivotDF.to_html()))
+    print(pivotDF.to_latex())
+    print("")
+# %%
+
+dff = df.copy()
+
+dff["time [s]"] = dff["scores.mean_fit_time"]
+dff["nodes"] = dff["mean_nodes"]
+dff["accuracy"] = 100.0*dff["mean_accuracy"]
+dff["size [kb]"] = dff["mean_memory"]
+
+#print(dff[["accuracy"]])
+#asdf
+
+for kb in max_kb:
+    if kb is not None:
+        filteredDF = dff.copy()
+        filteredDF.loc[filteredDF.mean_memory > kb, ['accuracy', "size [kb]", "time [s]", "mean_nodes"]] = 0
+        #filteredDF = df.drop(df[df.mean_memory > kb].index)
+    else:
+        filteredDF = dff
+    
+    filteredDF = filteredDF.sort_values(by=["dataset", 'accuracy'], ascending = False)
+    filteredDF = filteredDF.groupby(["nice_name", "dataset"]).head(1)
+    
+    print("Filtered for {} KB".format(kb))
+    #display(HTML(filteredDF[["dataset", "nice_name", "accuracy", "nodes", "time [s]", "size [kb]"]].to_html()))
+    #asdf
+
+    pivotDF = pd.pivot_table(filteredDF, values = ["size [kb]", "accuracy", "time [s]"], index = ["nice_name"], columns = ["dataset"]) 
+    pivotDF["size [kb]"] = pivotDF["size [kb]"].astype(float).round(0).astype(int)
+    pivotDF["accuracy"] = pivotDF["accuracy"].astype(float).round(3)
+    pivotDF["time [s]"] = pivotDF["time [s]"].astype(float).round(0).astype(int)
+    #pivotDF["mean_nodes"] = pivotDF["mean_nodes"].astype(float).round(0).astype(int)
+    pivotDF = pivotDF.reorder_levels([1, 0], axis=1).sort_index(1)
+    pivotDF = pivotDF.T
+    display(pivotDF)
+    #display( pivotDF.style.apply(highlight,axis=1) )
+    print(pivotDF.to_latex())
+    print("")
+    #pivotDF = pd.pivot_table(filteredDF, values = ["size [kb]", "accuracy"], index = ["dataset"], columns = ["nice_name"]) 
+
+    #pivotDF = pivotDF.swaplevel(0,1,axis = 1)#.sort(axis = 1)
+    #pivotDF = pivotDF.reorder_levels([1, 0], axis=1).sort_index(1)
+    #display(pivotDF) #.swaplevel(0,2)
+
+
+    # break
+    # #display(HTML(pivotDF.to_html()))
+    #break
+
 
 # %%
 import plotly.graph_objects as go

@@ -3,6 +3,8 @@ import pickle
 import sys
 from tqdm import tqdm
 
+import time
+
 from absl import logging
 # Disable "WARNING: Logging before flag parsing goes to stderr." message
 # logging._warn_preinit_stderr = 0
@@ -10,10 +12,10 @@ from absl import logging
 logging.set_verbosity(logging.ERROR)
 
 import jax
-from jax import grad
+# from jax import grad
 from jax import value_and_grad
 from jax import jit
-from jax import vmap
+# from jax import vmap
 from jax import pmap
 
 from functools import partial
@@ -26,35 +28,37 @@ from sklearn.metrics import accuracy_score
 from scipy.special import softmax
 from OnlineLearner import OnlineLearner
 
-@jax.partial(jit, static_argnums=0) 
-def path_indicies(max_depth, path):
-    i = path[-1]
+jax.config.update('jax_platform_name', 'cpu')
 
-    if (i > max_depth):
-        return [path]
-    else:
-        lpath = path + [2*i+1]
-        lpath = path_indicies(max_depth, lpath)
+# @jax.partial(jit, static_argnums=0) 
+# def path_indicies(max_depth, path):
+#     i = path[-1]
+
+#     if (i > max_depth):
+#         return [path]
+#     else:
+#         lpath = path + [2*i+1]
+#         lpath = path_indicies(max_depth, lpath)
         
-        rpath = path + [2*i+2]
-        rpath = path_indicies(max_depth, rpath)
+#         rpath = path + [2*i+2]
+#         rpath = path_indicies(max_depth, rpath)
 
-        lpath.extend(rpath)
-        return lpath
+#         lpath.extend(rpath)
+#         return lpath
 
-@jax.partial(jit, static_argnums=0)
-def path_indicies_iter(max_index):
-    to_expand = [[ [0, True] ]]
-    pathes = []
-    while to_expand:
-        path = to_expand.pop()
-        last_index = path[-1][0]
-        if last_index > max_index:
-            pathes.append(path)
-        else:
-            to_expand.append(path + [ [2*last_index + 1, True] ])
-            to_expand.append(path + [ [2*last_index + 2, False] ])
-    return pathes
+# @jax.partial(jit, static_argnums=0)
+# def path_indicies_iter(max_index):
+#     to_expand = [[ [0, True] ]]
+#     pathes = []
+#     while to_expand:
+#         path = to_expand.pop()
+#         last_index = path[-1][0]
+#         if last_index > max_index:
+#             pathes.append(path)
+#         else:
+#             to_expand.append(path + [ [2*last_index + 1, True] ])
+#             to_expand.append(path + [ [2*last_index + 2, False] ])
+#     return pathes
 
 # @jit 
 # def tree_predict_proba(X, W, B, leaf_preds, beta = 1.0):
@@ -110,15 +114,43 @@ def path_indicies_iter(max_index):
 #     #print(preds.sum(axis=0))
 #     return preds.sum(axis=0)
 
-@jit 
+# @jit 
+# def tree_predict_proba(X, W, B, leaf_preds, beta = 1.0):
+#     # W = W / (jax.numpy.linalg.norm(W, ord = 2, axis=1, keepdims=True) + 1e-7)
+#     all_preds = jax.nn.sigmoid( beta * ((W * X[:,np.newaxis,:]).sum(axis=2) + B.T) ) 
+    
+#     path_probs = []
+#     to_expand = [ (0, 1.0)  ]
+#     max_index = W.shape[0] - 1
+
+#     while to_expand:
+#         last_index, pprob = to_expand.pop()
+#         if last_index > max_index:
+#             path_probs.append(pprob[:,np.newaxis])
+#         else:
+#             to_expand.append( (2*last_index + 1, pprob * all_preds[:,last_index]) )
+#             to_expand.append( (2*last_index + 2, pprob * (1.0 - all_preds[:,last_index])) )
+
+#     path_probs = jax.numpy.stack(path_probs)
+#     preds = path_probs * leaf_preds[:,np.newaxis,:]
+#     #preds = path_probs * leaf_preds
+#     #print(preds.sum(axis=0))
+#     return preds.sum(axis=0)
+
+# @jit 
+def get_all_path_preds(X, W, B, beta = 1.0):
+    return jax.nn.sigmoid( beta * ((W * X).sum(axis=2) + B.T) ) 
+
+# @jit 
 def tree_predict_proba(X, W, B, leaf_preds, beta = 1.0):
     # W = W / (jax.numpy.linalg.norm(W, ord = 2, axis=1, keepdims=True) + 1e-7)
-    all_preds = jax.nn.sigmoid( beta * ((W * X[:,np.newaxis,:]).sum(axis=2) + B.T) ) 
+    #all_preds = jax.nn.sigmoid( beta * ((W * X[:,np.newaxis,:]).sum(axis=2) + B.T) ) 
+    #all_preds = jax.nn.sigmoid( beta * ((W * X).sum(axis=2) + B.T) ) 
+    all_preds = get_all_path_preds(X, W, B, beta)
     
-    path_probs = []
     to_expand = [ (0, 1.0)  ]
     max_index = W.shape[0] - 1
-
+    path_probs = []
     while to_expand:
         last_index, pprob = to_expand.pop()
         if last_index > max_index:
@@ -128,20 +160,59 @@ def tree_predict_proba(X, W, B, leaf_preds, beta = 1.0):
             to_expand.append( (2*last_index + 2, pprob * (1.0 - all_preds[:,last_index])) )
 
     path_probs = jax.numpy.stack(path_probs)
-    preds = path_probs * leaf_preds[:,np.newaxis,:]
-    #preds = path_probs * leaf_preds
-    #print(preds.sum(axis=0))
-    return preds.sum(axis=0)
+    #preds = path_probs * leaf_preds[:,np.newaxis,:]
 
-# @jit
+    preds = path_probs * leaf_preds
+    preds = preds.sum(axis=0)[np.newaxis,:]
+    return preds
+
+# # @jit 
+# def tree_predict_proba(X, W, B, leaf_preds, beta = 1.0):
+#     # W = W / (jax.numpy.linalg.norm(W, ord = 2, axis=1, keepdims=True) + 1e-7)
+#     #all_preds = jax.nn.sigmoid( beta * ((W * X[:,np.newaxis,:]).sum(axis=2) + B.T) ) 
+#     all_preds = jax.nn.sigmoid( beta * ((W * X).sum(axis=2) + B.T) ) 
+    
+#     start = time.time()
+#     path_probs = jax.numpy.stack([
+#         all_preds[:,0,np.newaxis],
+#         1.0 - all_preds[:,0,np.newaxis]
+#     ])
+#     end = time.time()
+#     print("path_probs: ", end - start)
+#     print("")
+    
+#     tmp = leaf_preds[:,np.newaxis,:]
+#     start = time.time()
+#     preds = path_probs * leaf_preds #[:,np.newaxis,:]
+#     # end = time.time()
+#     # print("preds: ", end - start)
+#     # print("")
+#     # path_probs2 = jax.numpy.stack([
+#     #     all_preds[:,0],
+#     #     1.0 - all_preds[:,0]
+#     # ])
+#     # print(path_probs2.shape)
+#     # print(leaf_preds.shape)
+#     # preds2 = path_probs2 * leaf_preds
+#     # print("PREDS:", preds.shape)
+#     # print("PREDS2:", preds2.shape)
+#     return preds.sum(axis=0)
+#     # return preds2.sum(axis=0)[np.newaxis,:]
+
+# # @jit
+# def predict_proba(X, W, B, leaf_preds, beta = 1.0):
+#     return jax.numpy.stack([tree_predict_proba(X,W[0],B[0],leaf_preds[0],beta)]).mean(axis=0)
+
+@jit
 def predict_proba(X, W, B, leaf_preds, beta = 1.0):
-    # TODO THIS SHOULD BE A pmap shouldnt it?
-    ensemble_preds = []
-    for w, b, l in zip(W,B,leaf_preds):
-        preds = tree_predict_proba(X,w,b,l,beta)
-        ensemble_preds.append(preds)
-
-    return jax.numpy.stack(ensemble_preds).mean(axis=0)
+    X = X[:,np.newaxis,:]
+    # tmp = tree_predict_proba(X,W[0],B[0],leaf_preds[0],beta) 
+    # return tmp
+    all_preds = jax.numpy.stack( [
+        tree_predict_proba(X,w,b,l,beta) for w, b, l in zip(W,B,leaf_preds)
+        #tree_predict_proba(X,W[0],B[0],leaf_preds[0],beta) 
+    ])
+    return all_preds.mean(axis=0)
 
 class JaxModel(OnlineLearner):
     def __init__(self,  
@@ -186,8 +257,7 @@ class JaxModel(OnlineLearner):
         size = super().num_bytes()
         size += sys.getsizeof(self.cur_batch_x) + sys.getsizeof(self.cur_batch_y) + sys.getsizeof(self.max_depth) + sys.getsizeof(self.batch_size) + sys.getsizeof(self.beta_max) + sys.getsizeof(self.temp_scaling) + sys.getsizeof(self.l_reg) + sys.getsizeof(self.beta) + sys.getsizeof(self.n_trees) + sys.getsizeof(self.step_size) + sys.getsizeof(self.loss)
         
-        # TODO Check if getsizeof returns the correct number here?
-        return size + sys.getsizeof(self.W) + sys.getsizeof(self.leaf_preds)
+        return size + sum([w.nbytes for w in self.W]) + sum([lp.nbytes for lp in self.leaf_preds]) + sum([b.nbytes for b in self.B])
 
         #return self.num_trees() * (self.W[0].shape[0] * self.W[0].shape[1] + self.B[0].shape[0] + self.leaf_preds[0].shape[0] * self.leaf_preds[0].shape[1]) * 4
         # p = pickle.dumps(self)
@@ -225,10 +295,10 @@ class JaxModel(OnlineLearner):
         def _loss(W, B, leaf_preds, x, beta):
             pred = predict_proba(x, W, B, leaf_preds, beta) #self.all_pathes, self.soft
             if self.loss == "mse":
-                target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in batch_target] )
+                target_one_hot = jax.numpy.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in batch_target] )
                 loss = (pred - target_one_hot) * (pred - target_one_hot)
             elif self.loss == "cross-entropy":
-                target_one_hot = np.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in batch_target] )
+                target_one_hot = jax.numpy.array( [ [1.0 if y == i else 0.0 for i in range(self.n_classes_)] for y in batch_target] )
                 p = jax.nn.softmax(pred, axis=1)
                 loss = -target_one_hot*jax.numpy.log(p)
             
@@ -253,7 +323,7 @@ class JaxModel(OnlineLearner):
                 return loss + self.l_reg * w_reg.mean() + self.l_reg * b_reg.mean()
             else:
                 return loss#.mean()
-
+        
         loss, gradient = value_and_grad(_loss, (0, 1, 2))(self.W, self.B, self.leaf_preds, batch_data, self.beta)
         W_grad, B_grad, leaf_preds_grad = gradient
 
@@ -284,5 +354,5 @@ class JaxModel(OnlineLearner):
 
         self.W = [jax.random.normal(key, (self.n_inner, X.shape[1])) for _ in range(self.num_trees())]
         self.B = [jax.random.normal(key, (self.n_inner, 1)) for _ in range(self.num_trees())]
-        self.leaf_preds = [jax.random.uniform(key, (self.n_leafs, n_classes_)) for _ in range(self.num_trees())]
+        self.leaf_preds = [jax.random.uniform(key, (self.n_leafs,1, n_classes_)) for _ in range(self.num_trees())]
         super().fit(X,y,sample_weight)

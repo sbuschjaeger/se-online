@@ -64,6 +64,7 @@ class PrimeModel(OnlineLearner):
                 tree_regularizer = None,
                 l_tree_reg = 0,
                 normalize_weights = False,
+                burnin_steps = 0,
                 update_leaves = False,
                 batch_size = 256,
                 verbose = False,
@@ -72,7 +73,8 @@ class PrimeModel(OnlineLearner):
                 additional_tree_options = {
                     "splitter" : "best", 
                     "criterion" : "gini", 
-                    "max_depth": None
+                    "max_depth": None,
+                    "max_features" : None
                 },
                 eval_loss = "cross-entropy",
                 shuffle = False,
@@ -83,6 +85,10 @@ class PrimeModel(OnlineLearner):
 
         if backend == "c++":
             assert "max_depth" in additional_tree_options and additional_tree_options["max_depth"] > 0, "The C++ backend required a maximum tree depth to be set, but none was given"
+
+        if backend == "c++":
+            if "max_features" not in additional_tree_options or additional_tree_options["max_features"] is None or additional_tree_options["max_features"] < 0:
+                additional_tree_options["max_features"] = 0
 
         if "tree_init_mode" in additional_tree_options:
             assert additional_tree_options["tree_init_mode"] in ["train", "fully-random", "random"], "Currently only {{train, fully-random, random}} as tree_init_mode is supported"
@@ -112,21 +118,30 @@ class PrimeModel(OnlineLearner):
         self.out_path = out_path
         self.additional_tree_options = additional_tree_options
         self.model = None 
-
+        self.burnin_steps = burnin_steps
         self.cur_batch_x = [] 
         self.cur_batch_y = [] 
 
     def num_bytes(self):
         size = super().num_bytes()
-        size += sys.getsizeof(self.backend) + sys.getsizeof(self.loss) + sys.getsizeof(self.step_size) + sys.getsizeof(self.ensemble_regularizer) + sys.getsizeof(self.l_ensemble_reg) + sys.getsizeof(self.tree_regularizer) + sys.getsizeof(self.l_tree_reg) + sys.getsizeof(self.normalize_weights) + sys.getsizeof(self.update_leaves) + sys.getsizeof(self.batch_size) + sys.getsizeof(self.verbose) + sys.getsizeof(self.out_path) + sys.getsizeof(self.seed) + sys.getsizeof(self.additional_tree_options) + sys.getsizeof(self.model) + sys.getsizeof(self.cur_batch_x) + sys.getsizeof(self.cur_batch_y) +  sys.getsizeof(self.tree_init_mode)
+        size += sys.getsizeof(self.backend) + sys.getsizeof(self.loss) + sys.getsizeof(self.step_size) + sys.getsizeof(self.ensemble_regularizer) + sys.getsizeof(self.l_ensemble_reg) + sys.getsizeof(self.tree_regularizer) + sys.getsizeof(self.l_tree_reg) + sys.getsizeof(self.normalize_weights) + sys.getsizeof(self.update_leaves) + sys.getsizeof(self.batch_size) + sys.getsizeof(self.verbose) + sys.getsizeof(self.out_path) + sys.getsizeof(self.seed) + sys.getsizeof(self.additional_tree_options) + sys.getsizeof(self.model) + sys.getsizeof(self.cur_batch_x) + sys.getsizeof(self.cur_batch_y) + sys.getsizeof(self.tree_init_mode) + sys.getsizeof(self.burnin_steps)
 
-        return self.model.num_bytes() + size
+        if self.model is not None:
+            return self.model.num_bytes() + size
+        else:
+            return size
 
     def num_trees(self):
-        return self.model.num_trees()
+        if self.model is not None:
+            return self.model.num_trees()
+        else:
+            return 0
 
     def num_nodes(self):
-        return self.model.num_nodes()
+        if self.model is not None:
+            return self.model.num_nodes()
+        else:
+            return 0
 
     def next(self, data, target):
         # The python and the c++ backend are both batched algorithms
@@ -155,12 +170,14 @@ class PrimeModel(OnlineLearner):
             self.tree_regularizer,
             self.l_tree_reg,
             self.normalize_weights,
+            self.burnin_steps,
             self.update_leaves,
             self.batch_size,
             self.verbose,
             self.out_path,
             self.seed,
-            1,
+            False, # no bootstrapping
+            1, # 1 epoch
             self.backend,
             self.additional_tree_options
         )
@@ -187,6 +204,8 @@ class PrimeModel(OnlineLearner):
                 self.additional_tree_options["max_depth"],
                 self.seed,
                 self.normalize_weights,
+                self.burnin_steps,
+                self.additional_tree_options["max_features"],
                 self.loss,
                 step_size,
                 step_size_mode,

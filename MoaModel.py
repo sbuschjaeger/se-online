@@ -111,6 +111,7 @@ class MoaModel(OnlineLearner):
         #self.model = moa_model
         self.model = create_moa_model(moa_model, moa_params)
         self.model.prepareForUse()
+        self.ref_size = self.model.measureByteSize()
 
     def predict_proba_one(self, x):
         from com.yahoo.labs.samoa.instances import DenseInstance
@@ -174,7 +175,8 @@ class MoaModel(OnlineLearner):
 
     def num_bytes(self):
         if hasattr(self.model, "measureByteSize"):
-             return self.model.measureByteSize()
+            # Try to make the comparison a little more fair
+            return self.model.measureByteSize() - self.ref_size
         else:
             return 0
 
