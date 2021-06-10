@@ -23,6 +23,6 @@ dependencies:
     - jax
     - jaxlib
     - git+https://github.com/online-ml/river
-    - -e file:ShrubEnsemble
-    - -e file:experiment_runner
+    # - -e file:ShrubEnsemble
+    # - -e file:experiment_runner
     

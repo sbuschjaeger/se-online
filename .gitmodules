@@ -3,6 +3,6 @@
 	url = git@github.com:sbuschjaeger/experiment_runner.git
 	branch = master
 [submodule "prime"]
-	path = prime
+	path = ShrubEnsembles
 	url = git@github.com:sbuschjaeger/ShrubEnsembles.git
 	branch = main
