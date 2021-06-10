@@ -15,7 +15,7 @@ from scipy.special import softmax
 
 from OnlineLearner import OnlineLearner
 
-from prime.CPrimeBindings import CTreeBindings
+from se.ShrubEnsemble import CShrubEnsembleBindings
 
 class WindowedTree(OnlineLearner):
     """ 

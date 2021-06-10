@@ -79,7 +79,8 @@ class SEModel(OnlineLearner):
                 },
                 eval_loss = "cross-entropy",
                 shuffle = False,
-                backend = "python"
+                backend = "python",
+                rho = None
         ):
 
         super().__init__(eval_loss, seed, verbose, shuffle, out_path)
@@ -101,6 +102,16 @@ class SEModel(OnlineLearner):
             self.seed = 1234
         else:
             self.seed = seed
+
+        if rho is not None:
+            assert rho > 0 and rho < 1, "Please make sure that rho is either None or 0 < rho 1"
+
+            if step_size is not None or l_l2_reg is not None:
+                print("You set step_size or l_l2_reg and rho at the same time. The setting of rho replaces both, the step_size as well as l_l2_reg. If you want to set the step_size / l_l2_reg manually, please set rho = None")
+                
+            self.rho = rho
+        
+        assert step_size != None or self.rho != None, "Please give a meanigful step_size != None or set rho appropriatly to determine the step_size automatically"
 
         np.random.seed(self.seed)
         random.seed(self.seed)
@@ -126,7 +137,7 @@ class SEModel(OnlineLearner):
 
     def num_bytes(self):
         size = super().num_bytes()
-        size += sys.getsizeof(self.backend) + sys.getsizeof(self.loss) + sys.getsizeof(self.step_size) + sys.getsizeof(self.ensemble_regularizer) + sys.getsizeof(self.l_ensemble_reg) + sys.getsizeof(self.tree_regularizer) + sys.getsizeof(self.l_tree_reg) + sys.getsizeof(self.normalize_weights) + sys.getsizeof(self.update_leaves) + sys.getsizeof(self.batch_size) + sys.getsizeof(self.verbose) + sys.getsizeof(self.out_path) + sys.getsizeof(self.seed) + sys.getsizeof(self.additional_tree_options) + sys.getsizeof(self.model) + sys.getsizeof(self.cur_batch_x) + sys.getsizeof(self.cur_batch_y) + sys.getsizeof(self.tree_init_mode) + sys.getsizeof(self.burnin_steps) + sys.getsizeof(self.l_l2_reg)
+        size += sys.getsizeof(self.backend) + sys.getsizeof(self.loss) + sys.getsizeof(self.step_size) + sys.getsizeof(self.ensemble_regularizer) + sys.getsizeof(self.l_ensemble_reg) + sys.getsizeof(self.tree_regularizer) + sys.getsizeof(self.l_tree_reg) + sys.getsizeof(self.normalize_weights) + sys.getsizeof(self.update_leaves) + sys.getsizeof(self.batch_size) + sys.getsizeof(self.verbose) + sys.getsizeof(self.out_path) + sys.getsizeof(self.seed) + sys.getsizeof(self.additional_tree_options) + sys.getsizeof(self.model) + sys.getsizeof(self.cur_batch_x) + sys.getsizeof(self.cur_batch_y) + sys.getsizeof(self.tree_init_mode) + sys.getsizeof(self.burnin_steps) + sys.getsizeof(self.l_l2_reg) + sys.getsizeof(self.rho)
 
         if self.model is not None:
             return self.model.num_bytes() + size
@@ -164,6 +175,13 @@ class SEModel(OnlineLearner):
         return self.model.predict_proba(X)
 
     def fit(self, X, y, sample_weight = None):
+        classes_ = unique_labels(y)
+        n_classes_ = len(classes_)
+
+        if self.rho is not None:
+            self.l_l2_reg = (self.l_ensemble_reg * (2 - self.rho) / self.rho) / n_classes_
+            self.step_size = 1.0 / (self.l_ensemble_reg + self.l_l2_reg)
+
         self.model = ShrubEnsemble(
             self.loss,
             self.step_size,
@@ -221,8 +239,8 @@ class SEModel(OnlineLearner):
                 tree_update_mode
             )
         
-        self.model.classes_ = unique_labels(y)
-        self.model.n_classes_ = len(self.model.classes_)
-        self.model.n_outputs_ = self.model.n_classes_
-        
+        self.model.classes_ = classes_
+        self.model.n_classes_ = n_classes_
+        self.model.n_outputs_ = n_classes_
+
         super().fit(X,y, sample_weight)

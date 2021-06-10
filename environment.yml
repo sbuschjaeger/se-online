@@ -10,7 +10,7 @@ dependencies:
   - pandas
   - setuptools
   - plotly
-  - plotly-orca
+  - plotly-orca==1.3.1 #conda install -c plotly plotly-orca==1.3.1
   - psutil
   - jupyter
   - tqdm
@@ -22,6 +22,7 @@ dependencies:
     - JPype1
     - jax
     - jaxlib
+    - pymongo
     - git+https://github.com/online-ml/river
     # - -e file:ShrubEnsemble
     # - -e file:experiment_runner
