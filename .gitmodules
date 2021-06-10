@@ -4,5 +4,5 @@
 	branch = master
 [submodule "prime"]
 	path = prime
-	url = git@github.com:sbuschjaeger/prime.git
+	url = git@github.com:sbuschjaeger/ShrubEnsembles.git
 	branch = main

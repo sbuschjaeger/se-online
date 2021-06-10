@@ -15,7 +15,11 @@ RUN apt-get update && \
        tmux \
        cmake \
        less \
-       default-jre
+       default-jre \
+       xvfb \
+       libgdk-pixbuf2.0-0 \
+       libgtk-3-dev \
+       libxss1
 
 # Install Anaconda
 ENV PATH="/opt/miniconda3/bin:$PATH"

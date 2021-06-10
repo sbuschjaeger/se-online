@@ -1,4 +1,4 @@
-name: psgd-ensemble
+name: se-online
 channels:
   - conda-forge
 dependencies:
@@ -9,7 +9,9 @@ dependencies:
   - pip
   - pandas
   - setuptools
-  # - plotly
+  - plotly
+  - plotly-orca
+  - psutil
   - jupyter
   - tqdm
   - gdown # Required for stream51 dataset
@@ -21,6 +23,6 @@ dependencies:
     - jax
     - jaxlib
     - git+https://github.com/online-ml/river
-    - -e file:prime
+    - -e file:ShrubEnsemble
     - -e file:experiment_runner
     

@@ -112,7 +112,7 @@ class OnlineLearner(ABC):
                 n_trees = self.num_trees()
                 
                 # Asking for the size of an objectiv is somewhat expensive. For MOA (=Java) we need to iterate over the entire
-                # object hierarchy and for Jax / SKLearn we need to (un)pickle everything. To speed things up a bit we compute
+                # object hierarchy and for SKLearn we need to (un)pickle everything. To speed things up a bit we compute
                 # the size of the model for every percent of data consumed. Since there is probably the most variability in the 
                 # size of the objects we also evaluate it for each item in the first percent of the data.
                 if (i < first_percent) or i % first_percent == 0:

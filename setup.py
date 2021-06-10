@@ -62,15 +62,15 @@ from setuptools.command.build_ext import build_ext
 #         subprocess.check_call(['cmake', ext.sourcedir] + cmake_args, cwd=self.build_temp, env=env)
 #         subprocess.check_call(['cmake', '--build', '.', '--target', 'PyBPE'] + build_args, cwd=self.build_temp)
 
-setup(
-    name='PyBPE',
-    version='0.1',
-    author='Sebastian Buschjäger',
-    author_email='sebastian.buschjaeger@tu-dortmund.de',
-    description='Biased Prox Ensemble for Python (PyBPE)',
-    long_description='',
-#    packages=['PyBPE'],
-    # ext_modules=[CMakeExtension('PyBPE')],
-    # cmdclass=dict(build_ext=CMakeBuild),
-    zip_safe=False
-)
+# setup(
+#     name='PyBPE',
+#     version='0.1',
+#     author='Sebastian Buschjäger',
+#     author_email='sebastian.buschjaeger@tu-dortmund.de',
+#     description='Biased Prox Ensemble for Python (PyBPE)',
+#     long_description='',
+# #    packages=['PyBPE'],
+#     # ext_modules=[CMakeExtension('PyBPE')],
+#     # cmdclass=dict(build_ext=CMakeBuild),
+#     zip_safe=False
+# )

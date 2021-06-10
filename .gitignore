@@ -4,7 +4,6 @@ __pycache__
 *.data
 build/*
 *.so
-PyBPE.egg-info/*
 *.jsonl
 *trn
 *tst
@@ -18,4 +17,4 @@ S2_Dataset
 *.txt
 *.npy
 moa-release-2020.12.0/*
-
+*.pdf
