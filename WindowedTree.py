@@ -158,6 +158,6 @@ class WindowedTree(OnlineLearner):
                 max_depth = int(self.additional_tree_options.get("max_depth", 1))
                 tree_init = self.additional_tree_options.get("tree_init_mode", "train")
                 
-                self.model = CTreeBindings(max_depth = max_depth, n_classes = self.n_classes_, seed = self.dt_seed, X = batch_data, Y = batch_target, tree_init_mode = tree_init, tree_update_mode = "none", max_features = self.additional_tree_options["max_features"])
+                self.model = CShrubEnsembleBindings(max_depth = max_depth, n_classes = self.n_classes_, seed = self.dt_seed, X = batch_data, Y = batch_target, tree_init_mode = tree_init, tree_update_mode = "none", max_features = self.additional_tree_options["max_features"])
 
             self.dt_seed += 1

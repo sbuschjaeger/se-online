@@ -214,10 +214,8 @@ def main(args):
         else:
             exit(1)
 
-        # TODO This might not be known in a real streaming setting. How important is it?
-        # Currently the c backend assumes normalized data
-        scaler = MinMaxScaler()
-        X = scaler.fit_transform(X)
+        # scaler = MinMaxScaler()
+        # X = scaler.fit_transform(X)
 
         from collections import Counter
         print("Data: ", X.shape)

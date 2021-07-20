@@ -32,6 +32,7 @@ name_mapping = {
     "AdaBoostClassifier":"AB",
     "BaggingClassifier":"Bag",
     "SEModel":"SE",
+    "PrimeModel":"SE",
     "JaxModel":"SDT",
     "TorchModel":"SDT",
     "WindowedTree":"SE",
@@ -102,20 +103,38 @@ base_path = "/rdata/s01b_ls8_000/buschjae/"
 # The datasets for which experiments have been performed on. 
 datasets = [
     "gas-sensor", "elec", "weather","nomao","led_a","led_g", "rbf_f", "rbf_m", "agrawal_a", "agrawal_g", "covtype", "airlines"
-    
+
 ]
 
 # The filter options for the maximum model size in KB
 max_kb = [None, 10 * 1024, 1024, 128]
 
+pathes = {
+    "agrawal_a":"results/04-06-2021-18:10:27",
+    "agrawal_g":"results/05-06-2021-01:06:41",
+    "airlines":"results/05-06-2021-21:33:24",
+    "covtype":"results/05-06-2021-21:30:15",
+    "elec":"results/04-06-2021-18:09:58",
+    "gas-sensor":"results/04-06-2021-20:42:49",
+    "led_a":"results/04-06-2021-18:10:13",
+    "led_g":"results/05-06-2021-21:29:26",
+    "nomao":"results/05-06-2021-01:29:41",
+    "rbf_f":"results/04-06-2021-18:10:24",
+    "rbf_m":"results/05-06-2021-21:29:27",
+    "weather":"results/04-06-2021-23:18:09",
+}
+
 combined = []
 for d in datasets:
     # Skip experiments which have not yet been performed
-    dataset_path = os.path.join(base_path, d, "results")
-    if not os.path.isdir(dataset_path):
-        continue
-    all_subdirs = [os.path.join(dataset_path,di) for di in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, di))]
-    latest_folder = max(all_subdirs, key=os.path.getmtime)
+
+    # dataset_path = os.path.join(base_path, d, "results")
+    # if not os.path.isdir(dataset_path):
+    #     continue
+    # all_subdirs = [os.path.join(dataset_path,di) for di in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, di))]
+    # latest_folder = max(all_subdirs, key=os.path.getmtime)
+
+    latest_folder = os.path.join(base_path, d, pathes[d])
 
     # The results.jsonl contains all experiments performed on this dataset and contains the path to each individual statistics file
     print("Reading {}".format(os.path.join(latest_folder, "results.jsonl")))
@@ -267,12 +286,12 @@ pio.orca.config.use_xvfb = True
 
 # Select the dataset for which we want to see individual graphs 
 selected_datasets = [
-    "gas-sensor"
+    "gas-sensor", "led_a"
     # ,"gas-sensor" ,  "nomao",  "covtype", "airlines", "led_a","led_g", "rbf_f", "rbf_m", "agrawal_a", "agrawal_g"
 ]
 
 # Select the methods for which we want to see individual graphs
-selected_methods = ["SE", "ARF", "SDT", "SRP", "HT", "HTT", "NB", "Bag", "SB"] 
+selected_methods = ["ARF", "Bag", "HT", "HTT", "NB", "SB", "SDT", "SE", "SRP"] 
 
 # Make sure that methods receive the same color and symbol across different plots
 # Color coding has been taken from https://colorbrewer2.org/#type=qualitative&scheme=Paired&n=9
@@ -281,7 +300,7 @@ paired = ['#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f',
 symbols = ["circle", "square", "diamond", "x", "hourglass", "star", "triangle-up", "hexagon", "triangle-down"]
 colors = {}
 markers = {}
-for m,c,s in zip(dff["nice_name"].unique(), cycle(paired), cycle(symbols)):
+for m,c,s in zip(selected_methods, cycle(paired), cycle(symbols)):
     colors[m] = c
     markers[m] = s
 
@@ -297,7 +316,7 @@ for dataset in selected_datasets:
     dff = dff.groupby("nice_name").head(1)
 
     # Prepare the figure for plotting
-    fig = make_subplots(rows=2, cols=1, horizontal_spacing = 0.03, vertical_spacing = 0.02)
+    fig = make_subplots(rows=2, cols=1, horizontal_spacing = 0.2, vertical_spacing = 0.1)
     
     # To make the plots look a little nicer in the paper we plotted them as pgf plots "by hand". To do so, we export the raw values
     all_accuracies = {}
@@ -311,7 +330,8 @@ for dataset in selected_datasets:
 
         # Plotting takes a long time and looks a little strange if there are too many points. Thus we evenly select 10000 points 
         if len(tdf) > 10000:
-            idx = np.linspace(0,len(tdf) - 1,10000,dtype=int)
+            # Ignore the last 20 entries because they look weird due to the convolution
+            idx = np.linspace(0,len(tdf) - 20,10000,dtype=int)
             tdf = tdf.iloc[idx]
         
         fig = fig.add_trace(go.Scatter(x=tdf["item_cnt"], y = tdf["running_accuracy"], mode="lines+markers", name = m, marker=dict(color = colors[m], symbol = markers[m], maxdisplayed=20, size=8)), row = 1, col = 1)
@@ -344,7 +364,7 @@ for dataset in selected_datasets:
     # Choose a simple white layout + export the pdf files
     fig.update_layout(
         template="simple_white",
-        legend=dict(orientation="h",yanchor="bottom",y=-0.13,xanchor="left",x=0.22,font = {"size": 20}),
+        legend=dict(orientation="h",yanchor="bottom",y=-0.18,xanchor="left",x=0.02,font = {"size": 20}),
         margin={'l': 5, 'r': 20, 't': 20, 'b': 5},
         height=700, width=900
     )
