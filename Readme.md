@@ -1,6 +1,6 @@
 # Shrub Ensembles For Online Classification
 
-This repsitory contains to code for our ICDM 2021 submission "Shrub Ensembles for Online Classification". In order to run the experiments you first need to download the corresponding data-sets. In each folder of each dataset you can find a `init.sh` script which downloads and prepares the data. For example to run experiments on the `gas-sensor` dataset just do
+This repsitory contains to code for our AAAI-22submission "Shrub Ensembles for Online Classification". In order to run the experiments you first need to download the corresponding data-sets. In each folder of each dataset you can find a `init.sh` script which downloads and prepares the data. For example to run experiments on the `gas-sensor` dataset just do
 
     cd gas-sensor
     ./init.sh

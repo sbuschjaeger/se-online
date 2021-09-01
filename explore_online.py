@@ -372,3 +372,108 @@ for dataset in selected_datasets:
     fig.write_image("{}.pdf".format(dataset))
     print("PLOTTING {} DONE".format(dataset))
 
+# %%
+
+import scipy
+import matplotlib.pyplot as plt
+
+def get_pareto(df, columns):
+    ''' Computes the pareto front of the given columns in the given dataframe. Returns results as a dataframe.
+    '''
+    first = df[columns[0]].values
+    second = df[columns[1]].values
+
+    # Count number of items
+    population_size = len(first)
+    # Create a NumPy index for scores on the pareto front (zero indexed)
+    population_ids = np.arange(population_size)
+    # Create a starting list of items on the Pareto front
+    # All items start off as being labelled as on the Parteo front
+    pareto_front = np.ones(population_size, dtype=bool)
+    # Loop through each item. This will then be compared with all other items
+    for i in range(population_size):
+        # Loop through all other items
+        for j in range(population_size):
+            # Check if our 'i' pint is dominated by out 'j' point
+            if (first[j] >= first[i]) and (second[j] < second[i]):
+            #if all(scores[j] >= scores[i]) and any(scores[j] > scores[i]):
+                # j dominates i. Label 'i' point as not on Pareto front
+                pareto_front[i] = 0
+                # Stop further comparisons with 'i' (no more comparisons needed)
+                break
+    
+    return df.iloc[population_ids[pareto_front]]
+
+# Since loading takes a long time we do not want to mess-up the dataframe. So we will first copy it
+dff = df.copy()
+
+# Rename some columns for nicer display
+dff["time [s]"] = dff["scores.mean_fit_time"]
+dff["nodes"] = dff["mean_nodes"]
+dff["accuracy"] = 100.0*dff["mean_accuracy"]
+dff["size [kb]"] = dff["mean_memory"]
+
+dff = dff.loc[dff["size [kb]"] < 100*1024]
+print(len(dff))
+#dff = dff.loc[dff["size [kb]"] < 100*2048]
+#dff = dff.loc[dff["size [kb]"] < 100*4096]
+
+colors = ['#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6']
+markers = ["o", "v", "^", "<", ">", "s", "P", "X", "D"]
+styles = ["-", "--", "-.", ":","-", "--", "-.", ":","-", "--", "-.", ":",]
+
+aucs = []
+show = False
+
+for dataset, gdf in dff.groupby("dataset"):
+    #gdf = gdf.loc[gdf["size [kb]"] < 0.2*1e6]
+    max_kb = None
+    for name, group in dff.groupby(["nice_name"]):
+        if max_kb is None or group["size [kb]"].max() > max_kb:
+            max_kb = group["size [kb]"].max()
+
+    fig = plt.figure()
+    for (name, group), marker, color, style in zip(gdf.groupby(["nice_name"]),markers, colors, styles):
+        pdf = get_pareto(group, ["accuracy", "size [kb]"])
+        pdf = pdf[["nice_name", "accuracy", "size [kb]", "time [s]"]]
+        # pdf = pdf.loc[pdf["test_accuracy"] > 86]
+        #pdf = pdf.loc[pdf["size [kb]"] < 0.2*10e6]
+        pdf = pdf.sort_values(by=['accuracy'], ascending = True)
+        
+        x = np.append(pdf["size [kb]"].values, [max_kb])
+        y = np.append(pdf["accuracy"].values, [pdf["accuracy"].values[-1]]) / 100.0
+        
+        x_scatter = np.append(group["size [kb]"].values, [max_kb])
+        y_scatter = np.append(group["accuracy"].values,[pdf["accuracy"].values[-1]]) / 100.0
+
+        plt.scatter(x_scatter,y_scatter,s = [2.5**2 for _ in x_scatter], color = color)
+
+        plt.plot(x,y, label=name, color=color) #marker=marker
+        aucs.append(
+            {
+                "model":name,
+                #"AUC":np.trapz(y, x),
+                "AUC":np.trapz(y, x) / max_kb,
+                "dataset":dataset
+            }
+        )
+
+    print("Dataset {}".format(dataset))
+    plt.legend(loc="lower right")
+    plt.xlabel("Model Size [KB]")
+    plt.ylabel("Accuracy")
+    fig.savefig("{}_paretofront.pdf".format(dataset), bbox_inches='tight')
+    if show:
+        plt.show()
+    plt.close()
+
+tabledf = pd.DataFrame(aucs)
+# tabledf["ΔAUC"] = ref_auc - tabledf["AUC"]
+# tabledf["AUC norm"] = tabledf["AUC"] / ref_auc
+#tabledf["AUC norm"] = tabledf["AUC"] / max_kb
+tabledf.sort_values(by=["dataset","AUC"], inplace = True, ascending=False)
+tabledf.to_csv("aucs.csv",index=False)
+
+tabledf.pivot_table(index=["dataset"], values=["AUC"], columns=["model"]).round(4).to_latex("aucs.tex")
+#if show:
+display(tabledf.pivot_table(index=["dataset"], values=["AUC"], columns=["model"]).round(4))
