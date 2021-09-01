@@ -8,10 +8,11 @@ import gzip
 import pickle
 
 '''
-This file offers three functionalities which are placed in three execution cells.
+This file offers four functionalities which are placed in three execution cells.
 - The first cell (this cell) defines some helper function for reading the data and mapping the names of algorithms to something presentable for the paper (e.g. ExtremelyFastDecisionTreeClassifier -> HTT, HoeffdingTreeClassifier -> HT etc.). Also this cells reads the results on the selected datasets (see `datasets` below) and prepares the for furthere use. IMPORTANT: The reading porcess can take quite some time to finish, especially if there are many dataset. Even though we gzip the statistics of each model, they require a lot of memory on disk since a statistics for each data point is stored. Consequently, the loading also takes a good amount of time.
 - The second cell perform the hyperparameter selection and filtering for different model sizes. It also produces the LaTex code for the tables which are in the paper
 - The third cell plots the results on selected datasets
+- The fourth cell computes the pareto fron and the area under the pareto fron. For plotting the CD diagram we used https://github.com/mirkobunse/CriticalDifferenceDiagrams.jl
 '''
 
 # Helper function to read the result file
@@ -103,12 +104,9 @@ base_path = "/rdata/s01b_ls8_000/buschjae/"
 # The datasets for which experiments have been performed on. 
 datasets = [
     "gas-sensor", "elec", "weather","nomao","led_a","led_g", "rbf_f", "rbf_m", "agrawal_a", "agrawal_g", "covtype", "airlines"
-
 ]
 
-# The filter options for the maximum model size in KB
-max_kb = [None, 10 * 1024, 1024, 128]
-
+# We can either search for the correct data-sets automatically (see below) or "hardcode" the correct path. 
 pathes = {
     "agrawal_a":"results/04-06-2021-18:10:27",
     "agrawal_g":"results/05-06-2021-01:06:41",
@@ -126,8 +124,7 @@ pathes = {
 
 combined = []
 for d in datasets:
-    # Skip experiments which have not yet been performed
-
+    # Find the latest experiments automatically + Skip experiments which have not yet been performed
     # dataset_path = os.path.join(base_path, d, "results")
     # if not os.path.isdir(dataset_path):
     #     continue
@@ -230,6 +227,10 @@ df = pd.concat(combined)
 
 # %%
 
+"""
+Output the test-then-train accuracy tables for different maximum model sizes. These tables only appear in the appendix. 
+"""
+
 # Since loading takes a long time we do not want to mess-up the dataframe. So we will first copy it
 dff = df.copy()
 
@@ -238,6 +239,9 @@ dff["time [s]"] = dff["scores.mean_fit_time"]
 dff["nodes"] = dff["mean_nodes"]
 dff["accuracy"] = 100.0*dff["mean_accuracy"]
 dff["size [kb]"] = dff["mean_memory"]
+
+# The filter options for the maximum model size in KB
+max_kb = [None, 10 * 1024, 1024, 128]
 
 # Print a table for each filtering step
 for kb in max_kb:
@@ -283,6 +287,11 @@ from itertools import cycle
 
 import plotly.io as pio
 pio.orca.config.use_xvfb = True
+
+"""
+Output the test-then-train plots over the number of data points. For the paper we re-worked some plots manually in tikz. To do so, the CSV with the original data points are also stored.
+"""
+
 
 # Select the dataset for which we want to see individual graphs 
 selected_datasets = [
@@ -377,6 +386,10 @@ for dataset in selected_datasets:
 import scipy
 import matplotlib.pyplot as plt
 
+"""
+Compute the pareto front for each method on each dataset and store its (normalized) area under the pareto front for the table and plot presented in the paper. The table was directly copied into the paper. For plotting the CD diagram we used https://github.com/mirkobunse/CriticalDifferenceDiagrams.jl
+"""
+
 def get_pareto(df, columns):
     ''' Computes the pareto front of the given columns in the given dataframe. Returns results as a dataframe.
     '''
@@ -413,16 +426,17 @@ dff["nodes"] = dff["mean_nodes"]
 dff["accuracy"] = 100.0*dff["mean_accuracy"]
 dff["size [kb]"] = dff["mean_memory"]
 
+# Filter for 100 MB and check how many experiments are left
 dff = dff.loc[dff["size [kb]"] < 100*1024]
 print(len(dff))
-#dff = dff.loc[dff["size [kb]"] < 100*2048]
-#dff = dff.loc[dff["size [kb]"] < 100*4096]
 
 colors = ['#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6']
 markers = ["o", "v", "^", "<", ">", "s", "P", "X", "D"]
 styles = ["-", "--", "-.", ":","-", "--", "-.", ":","-", "--", "-.", ":",]
 
 aucs = []
+
+# True if we should show plots inside the notebook directly
 show = False
 
 for dataset, gdf in dff.groupby("dataset"):
@@ -436,8 +450,6 @@ for dataset, gdf in dff.groupby("dataset"):
     for (name, group), marker, color, style in zip(gdf.groupby(["nice_name"]),markers, colors, styles):
         pdf = get_pareto(group, ["accuracy", "size [kb]"])
         pdf = pdf[["nice_name", "accuracy", "size [kb]", "time [s]"]]
-        # pdf = pdf.loc[pdf["test_accuracy"] > 86]
-        #pdf = pdf.loc[pdf["size [kb]"] < 0.2*10e6]
         pdf = pdf.sort_values(by=['accuracy'], ascending = True)
         
         x = np.append(pdf["size [kb]"].values, [max_kb])
@@ -468,12 +480,8 @@ for dataset, gdf in dff.groupby("dataset"):
     plt.close()
 
 tabledf = pd.DataFrame(aucs)
-# tabledf["ΔAUC"] = ref_auc - tabledf["AUC"]
-# tabledf["AUC norm"] = tabledf["AUC"] / ref_auc
-#tabledf["AUC norm"] = tabledf["AUC"] / max_kb
 tabledf.sort_values(by=["dataset","AUC"], inplace = True, ascending=False)
 tabledf.to_csv("aucs.csv",index=False)
 
 tabledf.pivot_table(index=["dataset"], values=["AUC"], columns=["model"]).round(4).to_latex("aucs.tex")
-#if show:
 display(tabledf.pivot_table(index=["dataset"], values=["AUC"], columns=["model"]).round(4))
