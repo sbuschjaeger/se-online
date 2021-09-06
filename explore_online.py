@@ -295,8 +295,7 @@ Output the test-then-train plots over the number of data points. For the paper w
 
 # Select the dataset for which we want to see individual graphs 
 selected_datasets = [
-    "gas-sensor", "led_a"
-    # ,"gas-sensor" ,  "nomao",  "covtype", "airlines", "led_a","led_g", "rbf_f", "rbf_m", "agrawal_a", "agrawal_g"
+    "gas-sensor" ,  "nomao",  "covtype", "airlines", "led_a","led_g", "rbf_f", "rbf_m", "agrawal_a", "agrawal_g"
 ]
 
 # Select the methods for which we want to see individual graphs
